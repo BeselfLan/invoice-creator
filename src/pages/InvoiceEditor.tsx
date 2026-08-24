@@ -13,7 +13,6 @@ import { useForm } from 'react-hook-form'
 import { Database, FileDown, Plus, Save, Upload, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getInvoice, saveInvoice } from '../db/invoiceRepository'
-import { toPdf } from '../utils/pdfConverter'
 import { fromJson, toJson } from '../utils/jsonConverter'
 import ResizeableTextArea from '../components/ResizeableTextArea'
 import { COMPANY_NAME } from '../constants/constants'
@@ -61,6 +60,12 @@ function InvoiceEditor() {
 
     return () => { cancelled = true }
   }, [routeId, reset, navigate])
+
+  // Effects run after paint, so this pulls the PDF chunk down in the background
+  // without holding up the first render.
+  useEffect(() => {
+    import('../utils/pdfConverter').catch(() => {})
+  }, [])
 
   // Let the "Saved!" confirmation fade back to the normal label.
   useEffect(() => {
@@ -124,7 +129,10 @@ function InvoiceEditor() {
     const element = printRef.current
     if (!element)
       return;
-    
+
+    // jspdf and html2canvas are ~600kB between them and nothing renders until
+    // the entry chunk has parsed, so they are fetched at the click instead.
+    const { toPdf } = await import('../utils/pdfConverter')
     await toPdf(element, `invoice-${invoice.customerInfo?.address}-${invoice?.date?.replace(/\s/g, '-')}`)
   }
 
