@@ -7,6 +7,12 @@ export const getCurrentDate = () => {
 };
 
 export type Invoice = {
+  /**
+   * Stable, globally unique identity for this invoice, assigned on first save.
+   * Optional because invoices typed into the editor (and files exported before
+   * ids existed) do not have one until they are saved.
+   */
+  uuid?: string,
   invoiceNo: string,
   date: string,
   customerInfo: {

@@ -1,8 +1,20 @@
+import { useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { FilePlus2, Trash2 } from 'lucide-react'
+import { FilePlus2, Save, SaveAll, Trash2, Upload } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
-import { deleteInvoice, listInvoices } from '../db/invoiceRepository'
+import {
+  deleteInvoice,
+  exportAllInvoices,
+  getInvoiceForExport,
+  importInvoiceFile,
+  listInvoices,
+  type InvoiceSummary,
+} from '../db/invoiceRepository'
+import { readJsonFile, saveJson, toJson } from '../utils/jsonConverter'
+import { formatDateAsYYYYMMDD } from '../utils/formatDate'
 import { currencyFormatter } from '../utils/currency'
+
+const describeCount = (count: number) => `${count} invoice${count === 1 ? '' : 's'}`
 
 const savedAtFormatter = new Intl.DateTimeFormat('en-CA', {
   dateStyle: 'medium',
@@ -13,6 +25,85 @@ function InvoicesList() {
   const navigate = useNavigate()
   // useLiveQuery re-runs whenever any of the three tables change.
   const invoices = useLiveQuery(() => listInvoices())
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [status, setStatus] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (status === null)
+      return
+    const timeout = setTimeout(() => setStatus(null), 4000)
+    return () => clearTimeout(timeout)
+  }, [status])
+
+  /** Downloads one invoice in the same JSON format the editor saves. */
+  const handleDownload = async (event: React.MouseEvent, summary: InvoiceSummary) => {
+    event.stopPropagation()
+    try {
+      const invoice = await getInvoiceForExport(summary.id)
+      if (!invoice)
+        return
+      const label = invoice.customerInfo?.name?.trim() || invoice.invoiceNo
+      toJson(invoice, ['invoice', label, invoice.date?.replace(/\s/g, '-')].filter(Boolean).join('-'))
+    } catch (error) {
+      console.error('Failed to export invoice', error)
+      setStatus('Could not export that invoice.')
+    }
+  }
+
+  /** Writes every saved invoice into a single backup file. */
+  const handleSaveAll = async () => {
+    try {
+      const backup = await exportAllInvoices()
+      if (backup.invoices.length === 0) {
+        setStatus('There are no invoices to save yet.')
+        return
+      }
+      const filename = `invoices-backup-${formatDateAsYYYYMMDD()}`
+      saveJson(backup, filename)
+      setStatus(`Saved ${describeCount(backup.invoices.length)} to ${filename}.json`)
+    } catch (error) {
+      console.error('Failed to export invoices', error)
+      setStatus('Could not save the invoices.')
+    }
+  }
+
+  /** Reads saved invoice files back into the database, one row each. */
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    // Reset so picking the same file twice in a row still fires a change.
+    event.target.value = ''
+    if (files.length === 0)
+      return
+
+    let added = 0
+    let replaced = 0
+    let skipped = 0
+    for (const file of files) {
+      try {
+        const parsed = await readJsonFile(file)
+        if (parsed === null) {
+          skipped++
+          continue
+        }
+        const result = await importInvoiceFile(parsed)
+        added += result.added
+        replaced += result.replaced
+        skipped += result.skipped
+      } catch (error) {
+        console.error('Failed to import file', error)
+        skipped++
+      }
+    }
+
+    const parts: string[] = []
+    if (added > 0)
+      parts.push(`Added ${describeCount(added)}`)
+    if (replaced > 0)
+      parts.push(`${parts.length === 0 ? 'Replaced' : 'replaced'} ${describeCount(replaced)}`)
+    if (skipped > 0)
+      parts.push(`${parts.length === 0 ? 'Skipped' : 'skipped'} ${skipped} unreadable ${skipped === 1 ? 'entry' : 'entries'}`)
+    setStatus(parts.length > 0 ? `${parts.join(', ')}.` : 'Nothing to import.')
+  }
 
   const handleDelete = async (event: React.MouseEvent, id: number, label: string) => {
     event.stopPropagation()
@@ -33,14 +124,47 @@ function InvoicesList() {
         <div className="bg-white shadow-lg rounded-lg p-8 w-[8.5in] max-w-2xl flex flex-col">
           <div className="flex flex-row justify-between items-center pb-4">
             <h1 className="text-2xl font-bold">Saved Invoices</h1>
-            <Link
-              to="/"
-              className="bg-blue-600 text-white text-sm p-3 rounded-md flex gap-3 items-center no-underline hover:bg-blue-500 hover:shadow-xl active:scale-[.8]"
-            >
-              <FilePlus2 size={20} />
-              <span>New invoice</span>
-            </Link>
+            <div className="flex flex-row gap-2 items-center">
+              <input
+                type="file"
+                accept="application/json"
+                multiple
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                onChange={handleUpload}
+              />
+              <button
+                type="button"
+                title="Save every invoice to one backup file"
+                className="bg-white border border-slate-300 text-slate-700 text-sm p-3 rounded-md flex gap-2 items-center hover:bg-slate-100 hover:shadow-lg active:scale-[.8] disabled:opacity-50 disabled:hover:bg-white disabled:active:scale-100"
+                onClick={handleSaveAll}
+                disabled={!invoices || invoices.length === 0}
+              >
+                <SaveAll size={20} />
+                <span>Save all</span>
+              </button>
+              <button
+                type="button"
+                title="Upload saved invoice or backup files"
+                className="bg-white border border-slate-300 text-slate-700 text-sm p-3 rounded-md flex gap-2 items-center hover:bg-slate-100 hover:shadow-lg active:scale-[.8]"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload size={20} />
+                <span>Upload</span>
+              </button>
+              <Link
+                to="/"
+                className="bg-blue-600 text-white text-sm p-3 rounded-md flex gap-2 items-center no-underline hover:bg-blue-500 hover:shadow-xl active:scale-[.8]"
+              >
+                <FilePlus2 size={20} />
+                <span>New</span>
+              </Link>
+            </div>
           </div>
+
+          {status && (
+            <div className="text-sm text-slate-600 bg-slate-100 rounded-md px-3 py-2 mb-3">{status}</div>
+          )}
 
           {invoices === undefined ? (
             <p className="text-sm text-gray-500 py-8 text-center">Loading invoices...</p>
@@ -48,7 +172,8 @@ function InvoicesList() {
             <div className="py-12 text-center">
               <p className="text-sm text-gray-500">No invoices saved yet.</p>
               <p className="text-sm text-gray-500">
-                Create one and hit <span className="font-bold">Save to database</span> to see it here.
+                Create one and hit <span className="font-bold">Save</span> in the editor,
+                or <span className="font-bold">Upload</span> a backup file to restore.
               </p>
             </div>
           ) : (
@@ -59,7 +184,7 @@ function InvoicesList() {
                   <th className="border p-2 text-left w-1/6">Date</th>
                   <th className="border p-2 text-left w-2/6">Customer</th>
                   <th className="border p-2 text-right w-1/6">Total</th>
-                  <th className="border p-2 w-[40px]"></th>
+                  <th className="border p-2 w-[70px]"></th>
                 </tr>
               </thead>
               <tbody>
@@ -68,7 +193,7 @@ function InvoicesList() {
                     key={invoice.id}
                     className="cursor-pointer hover:bg-slate-100"
                     onClick={() => navigate(`/invoices/${invoice.id}`)}
-                    title={`Last saved ${savedAtFormatter.format(invoice.updatedAt)}`}
+                    title={`Last saved ${savedAtFormatter.format(invoice.updatedAt)}\nid ${invoice.uuid}`}
                   >
                     <td className="border p-2">{invoice.invoiceNo || '--'}</td>
                     <td className="border p-2">{invoice.date || '--'}</td>
@@ -84,15 +209,25 @@ function InvoicesList() {
                         {invoice.itemCount} item{invoice.itemCount === 1 ? '' : 's'}
                       </div>
                     </td>
-                    <td className="border p-2 text-center">
-                      <button
-                        type="button"
-                        title="Delete invoice"
-                        className="text-gray-500 hover:text-red-500 align-middle"
-                        onClick={event => handleDelete(event, invoice.id, invoice.invoiceNo || String(invoice.id))}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                    <td className="border p-2">
+                      <div className="flex flex-row gap-2 justify-center items-center">
+                        <button
+                          type="button"
+                          title="Save invoice as JSON"
+                          className="text-gray-500 hover:text-blue-600"
+                          onClick={event => handleDownload(event, invoice)}
+                        >
+                          <Save size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete invoice"
+                          className="text-gray-500 hover:text-red-500"
+                          onClick={event => handleDelete(event, invoice.id, invoice.invoiceNo || String(invoice.id))}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -1,4 +1,4 @@
-import { db, type CustomerRecord, type InvoiceRecord, type ItemRecord } from './db';
+import { createInvoiceUuid, db, type CustomerRecord, type InvoiceRecord, type ItemRecord } from './db';
 import type { Invoice } from '../models/Invoice';
 
 /** A stored invoice re-joined with its customer and items. */
@@ -7,6 +7,8 @@ export type StoredInvoice = Invoice & { id: number };
 /** One row of the "all invoices" list. */
 export interface InvoiceSummary {
   id: number;
+  /** The invoice's portable unique id. */
+  uuid: string;
   invoiceNo: string;
   date: string;
   customerName: string;
@@ -37,8 +39,8 @@ const toInvoice = (
   invoice: InvoiceRecord,
   customer: CustomerRecord | undefined,
   items: ItemRecord[],
-): StoredInvoice => ({
-  id: invoice.id,
+): Invoice => ({
+  uuid: invoice.uuid,
   invoiceNo: invoice.invoiceNo,
   date: invoice.date,
   customerInfo: {
@@ -96,6 +98,9 @@ export async function saveInvoice(invoice: Invoice, id?: number): Promise<number
     }
 
     const header: Omit<InvoiceRecord, 'id'> = {
+      // An existing invoice keeps its identity no matter what the form sends
+      // back; a new one adopts an imported id or gets a fresh one.
+      uuid: existing?.uuid ?? invoice.uuid?.trim() ?? createInvoiceUuid(),
       invoiceNo: invoice.invoiceNo ?? '',
       date: invoice.date ?? '',
       customerId,
@@ -132,8 +137,8 @@ export async function saveInvoice(invoice: Invoice, id?: number): Promise<number
   });
 }
 
-/** Loads one invoice with its customer info and items attached. */
-export async function getInvoice(id: number): Promise<StoredInvoice | undefined> {
+/** Joins the three tables back together for a single invoice. */
+async function readInvoice(id: number): Promise<Invoice | undefined> {
   return db.transaction('r', db.customers, db.invoices, db.items, async () => {
     const invoice = await db.invoices.get(id);
     if (!invoice) return undefined;
@@ -147,8 +152,20 @@ export async function getInvoice(id: number): Promise<StoredInvoice | undefined>
   });
 }
 
-/** Lists every invoice, newest first, with its customer and computed total. */
-export async function listInvoices(): Promise<InvoiceSummary[]> {
+/** Loads one invoice with its customer info and items attached. */
+export async function getInvoice(id: number): Promise<StoredInvoice | undefined> {
+  const invoice = await readInvoice(id);
+  return invoice && { ...invoice, id };
+}
+
+interface JoinedInvoice {
+  record: InvoiceRecord;
+  customer?: CustomerRecord;
+  items: ItemRecord[];
+}
+
+/** Joins every invoice with its customer and items in one pass, newest first. */
+async function readAllInvoices(): Promise<JoinedInvoice[]> {
   return db.transaction('r', db.customers, db.invoices, db.items, async () => {
     const invoices = await db.invoices.orderBy('updatedAt').reverse().toArray();
     if (invoices.length === 0) return [];
@@ -168,22 +185,212 @@ export async function listInvoices(): Promise<InvoiceSummary[]> {
       else itemsByInvoice.set(item.invoiceId, [item]);
     }
 
-    return invoices.map((invoice) => {
-      const customer = customersById.get(invoice.customerId);
-      const invoiceItems = itemsByInvoice.get(invoice.id) ?? [];
-      return {
-        id: invoice.id,
-        invoiceNo: invoice.invoiceNo,
-        date: invoice.date,
-        customerName: customer?.name ?? '',
-        customerAddress: customer?.address ?? '',
-        customerCity: customer?.city ?? '',
-        itemCount: invoiceItems.length,
-        total: invoiceTotal(invoice, invoiceItems),
-        updatedAt: invoice.updatedAt,
-      };
-    });
+    return invoices.map((record) => ({
+      record,
+      customer: customersById.get(record.customerId),
+      items: itemsByInvoice.get(record.id) ?? [],
+    }));
   });
+}
+
+/** Lists every invoice, newest first, with its customer and computed total. */
+export async function listInvoices(): Promise<InvoiceSummary[]> {
+  const joined = await readAllInvoices();
+  return joined.map(({ record, customer, items }) => ({
+    id: record.id,
+    uuid: record.uuid,
+    invoiceNo: record.invoiceNo,
+    date: record.date,
+    customerName: customer?.name ?? '',
+    customerAddress: customer?.address ?? '',
+    customerCity: customer?.city ?? '',
+    itemCount: items.length,
+    total: invoiceTotal(record, items),
+    updatedAt: record.updatedAt,
+  }));
+}
+
+/**
+ * Reads a stored invoice back in the plain JSON shape the editor exports, so
+ * downloaded files are interchangeable with the ones saved from the editor.
+ */
+export async function getInvoiceForExport(id: number): Promise<Invoice | undefined> {
+  // Deliberately without the database id, which means nothing outside this browser.
+  return readInvoice(id)
+}
+
+const str = (value: unknown, fallback = '') =>
+  typeof value === 'string' ? value : fallback
+
+/**
+ * Turns the contents of an uploaded JSON file into an invoice we are willing
+ * to store, or null if it does not look like one of our invoices at all.
+ */
+export function normalizeImportedInvoice(parsed: unknown): Invoice | null {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+    return null
+
+  const raw = parsed as Record<string, unknown>
+  const customerInfo = (typeof raw.customerInfo === 'object' && raw.customerInfo !== null
+    ? raw.customerInfo
+    : {}) as Record<string, unknown>
+  const rawItems = Array.isArray(raw.items) ? raw.items : []
+
+  // A file with neither customer details nor line items is not an invoice.
+  if (Object.keys(customerInfo).length === 0 && rawItems.length === 0)
+    return null
+
+  return {
+    uuid: str(raw.uuid) || undefined,
+    invoiceNo: str(raw.invoiceNo),
+    date: str(raw.date),
+    customerInfo: {
+      name: str(customerInfo.name) || undefined,
+      address: str(customerInfo.address),
+      city: str(customerInfo.city),
+      phone: str(customerInfo.phone) || undefined,
+      email: str(customerInfo.email) || undefined,
+    },
+    description: str(raw.description),
+    recommendation: str(raw.recommendation),
+    items: rawItems.map((entry, index) => {
+      const item = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>
+      return {
+        id: index,
+        name: str(item.name),
+        quantity: optionalNum(item.quantity as number | undefined),
+        unitPrice: optionalNum(item.unitPrice as number | undefined),
+        amount: num(item.amount as number | undefined),
+      }
+    }),
+    labourFee: num(raw.labourFee as number | undefined),
+    other1: str(raw.other1),
+    other1Fee: num(raw.other1Fee as number | undefined),
+    other2: str(raw.other2),
+    other2Fee: num(raw.other2Fee as number | undefined),
+  }
+}
+
+const BACKUP_TYPE = 'invoice-creator-backup'
+
+/** One file holding every invoice, for the "Save all" button. */
+export interface InvoiceBackup {
+  type: typeof BACKUP_TYPE
+  version: 1
+  exportedAt: string
+  /** Each entry is exactly the single-invoice format the editor reads. */
+  invoices: Invoice[]
+}
+
+/** Collects every saved invoice into a single backup file's contents. */
+export async function exportAllInvoices(): Promise<InvoiceBackup> {
+  const joined = await readAllInvoices()
+  return {
+    type: BACKUP_TYPE,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    invoices: joined.map(({ record, customer, items }) => toInvoice(record, customer, items)),
+  }
+}
+
+/**
+ * Finds the saved invoice that an uploaded one should overwrite.
+ *
+ * Invoices carry a unique id, so that alone decides it: an uploaded invoice
+ * replaces the one it *is*, and an unknown id is simply a new invoice. Files
+ * exported before ids existed fall back to the old rule, matching on invoice
+ * number plus customer name -- but never onto a row this same file has already
+ * written, so a legacy backup holding two same-numbered invoices restores as
+ * two invoices instead of collapsing into one.
+ */
+async function findReplaceableInvoice(invoice: Invoice, claimed?: Set<number>): Promise<number | undefined> {
+  const uuid = invoice.uuid?.trim()
+  if (uuid)
+    return (await db.invoices.get({ uuid }))?.id
+
+  const invoiceNo = invoice.invoiceNo?.trim() ?? ''
+  if (invoiceNo === '')
+    return undefined
+
+  const candidates = await db.invoices.where('invoiceNo').equals(invoiceNo).toArray()
+  if (candidates.length === 0)
+    return undefined
+
+  const wantedName = (invoice.customerInfo?.name ?? '').trim().toLowerCase()
+  const customers = await db.customers.bulkGet(candidates.map(candidate => candidate.customerId))
+
+  const match = candidates.find((candidate, index) =>
+    !claimed?.has(candidate.id) &&
+    (customers[index]?.name ?? '').trim().toLowerCase() === wantedName)
+  return match?.id
+}
+
+export type ImportOutcome = 'added' | 'replaced' | 'skipped'
+
+export interface ImportResult {
+  added: number
+  replaced: number
+  skipped: number
+}
+
+/**
+ * Stores one invoice parsed out of a JSON file, overwriting the invoice it
+ * matches if there is one. `claimed` collects the rows already written by the
+ * file being imported.
+ */
+export async function importInvoice(parsed: unknown, claimed?: Set<number>): Promise<ImportOutcome> {
+  const invoice = normalizeImportedInvoice(parsed)
+  if (!invoice)
+    return 'skipped'
+
+  // One transaction so the match and the write cannot disagree; the write
+  // inside saveInvoice joins this transaction rather than opening its own.
+  return db.transaction('rw', db.customers, db.invoices, db.items, async () => {
+    const existingId = await findReplaceableInvoice(invoice, claimed)
+    // Kept on its own line: `claimed?.add(await saveInvoice(...))` would skip
+    // the save entirely whenever `claimed` is undefined.
+    const savedId = await saveInvoice(invoice, existingId)
+    claimed?.add(savedId)
+    return existingId === undefined ? 'added' : 'replaced'
+  })
+}
+
+/** Pulls the invoices out of a file, which may be a backup or a single invoice. */
+function toImportEntries(parsed: unknown): unknown[] {
+  if (Array.isArray(parsed))
+    return parsed
+  if (typeof parsed !== 'object' || parsed === null)
+    return []
+
+  const invoices = (parsed as Record<string, unknown>).invoices
+  return Array.isArray(invoices) ? invoices : [parsed]
+}
+
+/**
+ * Restores the contents of one uploaded file, whether it holds a single
+ * invoice or a whole backup.
+ */
+export async function importInvoiceFile(parsed: unknown): Promise<ImportResult> {
+  const result: ImportResult = { added: 0, replaced: 0, skipped: 0 }
+  const entries = toImportEntries(parsed)
+  // Rows written by this file, so two of its entries cannot claim the same one.
+  const claimed = new Set<number>()
+
+  if (entries.length === 0) {
+    result.skipped++
+    return result
+  }
+
+  for (const entry of entries) {
+    try {
+      result[await importInvoice(entry, claimed)]++
+    } catch (error) {
+      console.error('Failed to import invoice', error)
+      result.skipped++
+    }
+  }
+
+  return result
 }
 
 /** Deletes an invoice, its items, and its customer if nothing else uses it. */

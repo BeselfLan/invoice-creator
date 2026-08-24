@@ -36,7 +36,8 @@ function StorageWarning() {
             : 'This browser cannot guarantee persistent storage'}
           , so invoices saved here may be deleted automatically if the device runs
           low on space, in a private window, or when you clear browsing data.
-          Keep a JSON backup of anything important with the editor's <span className="font-bold">save</span> icon.
+          Keep JSON backups of anything important with the <span className="font-bold">save</span> icons,
+          and upload them again from the invoice list to restore.
         </div>
         {usageLabel && <div className="text-xs text-amber-700">{usageLabel}</div>}
         {state === 'denied' && (

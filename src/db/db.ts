@@ -18,6 +18,11 @@ export interface CustomerRecord {
  */
 export interface InvoiceRecord {
   id: number;
+  /**
+   * The invoice's identity outside this browser. `id` is only unique within
+   * one device's database, so exports and imports are matched on this instead.
+   */
+  uuid: string;
   invoiceNo: string;
   date: string;
   /** FK -> customers.id */
@@ -54,11 +59,33 @@ const db = new Dexie('InvoiceCreatorDB') as Dexie & {
   items: EntityTable<ItemRecord, 'id'>;
 };
 
+/** A new globally unique invoice identity. */
+export function createInvoiceUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    return crypto.randomUUID();
+
+  // randomUUID needs a secure context; fall back to raw random bytes.
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 // Indexes on the foreign keys are what make the relational lookups cheap.
 db.version(1).stores({
   customers: '++id, name, city, phone, email',
   invoices: '++id, invoiceNo, date, customerId, updatedAt',
   items: '++id, invoiceId, name',
 });
+
+// v2 gives every invoice a portable unique id. `&uuid` is a unique index;
+// rows saved under v1 are backfilled here.
+db.version(2).stores({
+  customers: '++id, name, city, phone, email',
+  invoices: '++id, &uuid, invoiceNo, date, customerId, updatedAt',
+  items: '++id, invoiceId, name',
+}).upgrade(tx => tx.table<InvoiceRecord>('invoices').toCollection().modify(invoice => {
+  if (!invoice.uuid)
+    invoice.uuid = createInvoiceUuid();
+}));
 
 export { db };
