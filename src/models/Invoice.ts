@@ -12,7 +12,7 @@ export const INVOICE_STATUSES = ['paid', 'pending', 'unpaid'] as const
 export type InvoiceStatus = typeof INVOICE_STATUSES[number]
 
 /** A freshly written invoice has not been paid yet. */
-export const DEFAULT_INVOICE_STATUS: InvoiceStatus = 'unpaid'
+export const DEFAULT_INVOICE_STATUS: InvoiceStatus = 'pending'
 
 export const isInvoiceStatus = (value: unknown): value is InvoiceStatus =>
   INVOICE_STATUSES.includes(value as InvoiceStatus)

@@ -5,6 +5,9 @@ import {
   type Invoice,
   type InvoiceStatus,
 } from '../models/Invoice';
+import { breakdownOf, breakdownTotal } from '../models/AmountType';
+import { parseInvoiceDate } from '../utils/invoiceDate';
+import type { InvoiceStat } from '../utils/invoiceStats';
 
 /** A stored invoice re-joined with its customer and items. */
 export type StoredInvoice = Invoice & { id: number };
@@ -220,6 +223,36 @@ export async function listInvoices(): Promise<InvoiceSummary[]> {
     total: invoiceTotal(record, items),
     updatedAt: record.updatedAt,
   }));
+}
+
+/**
+ * Every saved invoice reduced to the numbers the reports page aggregates:
+ * when it was billed, what state it is in, and how its total splits across
+ * parts, labour and everything else.
+ *
+ * An invoice whose `date` is blank or unreadable falls back to when it was
+ * first saved, so it still lands somewhere on the timeline rather than
+ * dropping out of the totals.
+ */
+export async function listInvoiceStats(): Promise<InvoiceStat[]> {
+  const joined = await readAllInvoices();
+  return joined.map(({ record, customer, items }) => {
+    const amounts = breakdownOf({
+      items,
+      labourFee: record.labourFee,
+      other1Fee: record.other1Fee,
+      other2Fee: record.other2Fee,
+    });
+    return {
+      id: record.id,
+      status: record.status ?? DEFAULT_INVOICE_STATUS,
+      invoiceNo: record.invoiceNo,
+      customerName: customer?.name ?? '',
+      dateMs: parseInvoiceDate(record.date) ?? record.createdAt,
+      amounts,
+      total: breakdownTotal(amounts),
+    };
+  });
 }
 
 /**
