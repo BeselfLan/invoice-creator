@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import './App.css'
+import StorageWarning from './components/StorageWarning'
 import InvoiceEditor from './pages/InvoiceEditor'
 import InvoicesList from './pages/InvoicesList'
 
@@ -17,6 +18,7 @@ function App() {
         <NavLink to="/" end className={navLinkClass}>Editor</NavLink>
         <NavLink to="/invoices" end className={navLinkClass}>All invoices</NavLink>
       </nav>
+      <StorageWarning />
       <Routes>
         <Route path="/" element={<InvoiceEditor />} />
         <Route path="/invoices" element={<InvoicesList />} />
