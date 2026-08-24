@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import '../App.css'
-import { Invoice, baseInvoice, getCurrentDate } from '../models/Invoice'
+import {
+  DEFAULT_INVOICE_STATUS,
+  INVOICE_STATUSES,
+  Invoice,
+  baseInvoice,
+  getCurrentDate,
+} from '../models/Invoice'
+import { invoiceStatusStyles } from '../constants/invoiceStatus'
 import { contactInfo } from '../constants/contactInfo'
 import { useForm } from 'react-hook-form'
 import { Database, FileDown, Plus, Save, Upload, X } from 'lucide-react'
@@ -83,6 +90,7 @@ function InvoiceEditor() {
   const other2Fee = watch("other2Fee") || 0;
   const date = watch("date") || new Date();
   const invoiceNo = watch("invoiceNo") || "";
+  const status = watch("status") ?? DEFAULT_INVOICE_STATUS;
 
   const printRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -103,6 +111,8 @@ function InvoiceEditor() {
       setValue('date', new Date().toDateString().slice(4))
     if (!getValues('invoiceNo'))
       setValue('invoiceNo', getCurrentDate())
+    if (!getValues('status'))
+      setValue('status', DEFAULT_INVOICE_STATUS)
   }
   setDefaultsValues() 
 
@@ -410,6 +420,28 @@ function InvoiceEditor() {
                 </div>
 
               </div>
+          </div>
+
+          <div className="w-full flex justify-center pt-6">
+            <div className="flex flex-row gap-2 items-center bg-white rounded-md shadow p-2">
+              <span className="text-sm text-slate-600 px-2">Payment status</span>
+              {INVOICE_STATUSES.map(option => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={status === option}
+                  title={`Mark this invoice as ${invoiceStatusStyles[option].label.toLowerCase()}`}
+                  className={`text-sm px-3 py-1 rounded-full border transition-colors ${
+                    status === option
+                      ? invoiceStatusStyles[option].selected
+                      : `${invoiceStatusStyles[option].badge} opacity-60 hover:opacity-100`
+                  }`}
+                  onClick={() => setValue('status', option, { shouldDirty: true })}
+                >
+                  {invoiceStatusStyles[option].label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="relative w-full flex justify-center p-8 pr-20 gap-4">

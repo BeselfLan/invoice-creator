@@ -13,6 +13,7 @@ import {
 import { readJsonFile, saveJson, toJson } from '../utils/jsonConverter'
 import { formatDateAsYYYYMMDD } from '../utils/formatDate'
 import { currencyFormatter } from '../utils/currency'
+import { invoiceStatusStyles } from '../constants/invoiceStatus'
 
 const describeCount = (count: number) => `${count} invoice${count === 1 ? '' : 's'}`
 
@@ -180,10 +181,11 @@ function InvoicesList() {
             <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="bg-gray-100">
-                  <th className="border p-2 text-left w-1/6">Invoice #</th>
-                  <th className="border p-2 text-left w-1/6">Date</th>
-                  <th className="border p-2 text-left w-2/6">Customer</th>
-                  <th className="border p-2 text-right w-1/6">Total</th>
+                  <th className="border p-2 text-left w-[17%]">Invoice #</th>
+                  <th className="border p-2 text-left w-[16%]">Date</th>
+                  <th className="border p-2 text-left w-[27%]">Customer</th>
+                  <th className="border p-2 text-left w-[14%]">Status</th>
+                  <th className="border p-2 text-right w-[16%]">Total</th>
                   <th className="border p-2 w-[70px]"></th>
                 </tr>
               </thead>
@@ -202,6 +204,11 @@ function InvoicesList() {
                       <div className="text-xs text-gray-500">
                         {[invoice.customerAddress, invoice.customerCity].filter(Boolean).join(', ')}
                       </div>
+                    </td>
+                    <td className="border p-2">
+                      <span className={`text-xs px-2 py-1 rounded-full border ${invoiceStatusStyles[invoice.status].badge}`}>
+                        {invoiceStatusStyles[invoice.status].label}
+                      </span>
                     </td>
                     <td className="border p-2 text-right">
                       <div>{currencyFormatter.format(invoice.total)}</div>

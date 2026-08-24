@@ -1,5 +1,10 @@
 import { createInvoiceUuid, db, type CustomerRecord, type InvoiceRecord, type ItemRecord } from './db';
-import type { Invoice } from '../models/Invoice';
+import {
+  DEFAULT_INVOICE_STATUS,
+  isInvoiceStatus,
+  type Invoice,
+  type InvoiceStatus,
+} from '../models/Invoice';
 
 /** A stored invoice re-joined with its customer and items. */
 export type StoredInvoice = Invoice & { id: number };
@@ -9,6 +14,7 @@ export interface InvoiceSummary {
   id: number;
   /** The invoice's portable unique id. */
   uuid: string;
+  status: InvoiceStatus;
   invoiceNo: string;
   date: string;
   customerName: string;
@@ -41,6 +47,7 @@ const toInvoice = (
   items: ItemRecord[],
 ): Invoice => ({
   uuid: invoice.uuid,
+  status: invoice.status ?? DEFAULT_INVOICE_STATUS,
   invoiceNo: invoice.invoiceNo,
   date: invoice.date,
   customerInfo: {
@@ -101,6 +108,10 @@ export async function saveInvoice(invoice: Invoice, id?: number): Promise<number
       // An existing invoice keeps its identity no matter what the form sends
       // back; a new one adopts an imported id or gets a fresh one.
       uuid: existing?.uuid ?? invoice.uuid?.trim() ?? createInvoiceUuid(),
+      // The form always sends a status; fall back for older saved data.
+      status: isInvoiceStatus(invoice.status)
+        ? invoice.status
+        : existing?.status ?? DEFAULT_INVOICE_STATUS,
       invoiceNo: invoice.invoiceNo ?? '',
       date: invoice.date ?? '',
       customerId,
@@ -199,6 +210,7 @@ export async function listInvoices(): Promise<InvoiceSummary[]> {
   return joined.map(({ record, customer, items }) => ({
     id: record.id,
     uuid: record.uuid,
+    status: record.status ?? DEFAULT_INVOICE_STATUS,
     invoiceNo: record.invoiceNo,
     date: record.date,
     customerName: customer?.name ?? '',
@@ -242,6 +254,7 @@ export function normalizeImportedInvoice(parsed: unknown): Invoice | null {
 
   return {
     uuid: str(raw.uuid) || undefined,
+    status: isInvoiceStatus(raw.status) ? raw.status : DEFAULT_INVOICE_STATUS,
     invoiceNo: str(raw.invoiceNo),
     date: str(raw.date),
     customerInfo: {

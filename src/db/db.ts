@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
+import { DEFAULT_INVOICE_STATUS, type InvoiceStatus } from '../models/Invoice';
 
 /**
  * Customer info, stored once per customer and referenced by invoices.
@@ -23,6 +24,8 @@ export interface InvoiceRecord {
    * one device's database, so exports and imports are matched on this instead.
    */
   uuid: string;
+  /** Payment status: paid, pending or unpaid. */
+  status: InvoiceStatus;
   invoiceNo: string;
   date: string;
   /** FK -> customers.id */
@@ -86,6 +89,16 @@ db.version(2).stores({
 }).upgrade(tx => tx.table<InvoiceRecord>('invoices').toCollection().modify(invoice => {
   if (!invoice.uuid)
     invoice.uuid = createInvoiceUuid();
+}));
+
+// v3 adds the payment status; invoices saved before it default to unpaid.
+db.version(3).stores({
+  customers: '++id, name, city, phone, email',
+  invoices: '++id, &uuid, status, invoiceNo, date, customerId, updatedAt',
+  items: '++id, invoiceId, name',
+}).upgrade(tx => tx.table<InvoiceRecord>('invoices').toCollection().modify(invoice => {
+  if (!invoice.status)
+    invoice.status = DEFAULT_INVOICE_STATUS;
 }));
 
 export { db };

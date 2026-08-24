@@ -6,6 +6,17 @@ export const getCurrentDate = () => {
   return `${year}${month}${day}`;
 };
 
+export const INVOICE_STATUSES = ['paid', 'pending', 'unpaid'] as const
+
+/** Where an invoice stands with the customer. */
+export type InvoiceStatus = typeof INVOICE_STATUSES[number]
+
+/** A freshly written invoice has not been paid yet. */
+export const DEFAULT_INVOICE_STATUS: InvoiceStatus = 'unpaid'
+
+export const isInvoiceStatus = (value: unknown): value is InvoiceStatus =>
+  INVOICE_STATUSES.includes(value as InvoiceStatus)
+
 export type Invoice = {
   /**
    * Stable, globally unique identity for this invoice, assigned on first save.
@@ -13,6 +24,8 @@ export type Invoice = {
    * ids existed) do not have one until they are saved.
    */
   uuid?: string,
+  /** Payment status; absent on invoices saved before statuses existed. */
+  status?: InvoiceStatus,
   invoiceNo: string,
   date: string,
   customerInfo: {
@@ -39,6 +52,7 @@ export type Invoice = {
 }
 
 export const baseInvoice: Invoice = {
+  status: DEFAULT_INVOICE_STATUS,
   invoiceNo: getCurrentDate(),
   date: new Date().toDateString().slice(4),
   customerInfo: {
