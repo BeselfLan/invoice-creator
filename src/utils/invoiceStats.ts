@@ -209,8 +209,9 @@ const emptyStatusTotals = (): Record<InvoiceStatus, StatusTotal> =>
  * totals, so every number on the page describes the same set of invoices --
  * which, for a named period, is exactly the invoices dated within it.
  *
- * `statuses` narrows that set further; an empty or missing set means no status
- * filter at all, which is what deselecting every button leaves behind.
+ * `status` narrows that set further to one payment status; leaving it out means
+ * no status filter at all, which is what deselecting the pressed tile leaves
+ * behind.
  *
  * The timeline itself is measured from the period rather than from the
  * invoices that survive the filter, so toggling a status re-draws the columns
@@ -219,7 +220,7 @@ const emptyStatusTotals = (): Record<InvoiceStatus, StatusTotal> =>
 export function buildReport(
   stats: InvoiceStat[],
   selection: ReportSelection,
-  statuses?: ReadonlySet<InvoiceStatus>,
+  status?: InvoiceStatus,
   now = Date.now(),
 ): ReportSummary {
   const { unit, starts } = timelineFor(stats, selection, now)
@@ -246,8 +247,6 @@ export function buildReport(
   const byStatus = emptyStatusTotals()
   const invoices: InvoiceStat[] = []
 
-  const filtering = statuses !== undefined && statuses.size > 0
-
   for (const stat of stats) {
     const bucket = bucketsByStart.get(startOfBucket(stat.dateMs, unit))
     if (!bucket)
@@ -257,7 +256,7 @@ export function buildReport(
     byStatus[stat.status].total += stat.total
     byStatus[stat.status].count++
 
-    if (filtering && !statuses.has(stat.status))
+    if (status !== undefined && stat.status !== status)
       continue
 
     addBreakdown(bucket.amounts, stat.amounts)

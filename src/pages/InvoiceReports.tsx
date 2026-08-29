@@ -37,12 +37,6 @@ const unitNouns = {
   year: 'year',
 } as const
 
-/** "paid" / "paid and pending" / "paid, pending and unpaid" */
-const listPhrase = (parts: string[]) =>
-  parts.length <= 1
-    ? parts[0] ?? ''
-    : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
-
 const stepButtonStyle =
   'p-1 rounded-md border border-slate-300 text-slate-700 transition-colors hover:bg-slate-100 ' +
   'disabled:opacity-40 disabled:hover:bg-white disabled:cursor-not-allowed'
@@ -53,8 +47,9 @@ function InvoiceReports() {
   // Computed once: which month "this month" is must not change under the
   // reader mid-session.
   const [selection, setSelection] = useState<ReportSelection>(defaultSelection)
-  // Empty means no status filter: switching every button off shows everything.
-  const [statusFilter, setStatusFilter] = useState<ReadonlySet<InvoiceStatus>>(new Set())
+  // One status at a time, or undefined for no status filter at all -- which is
+  // what pressing the selected tile again leaves behind.
+  const [statusFilter, setStatusFilter] = useState<InvoiceStatus | undefined>(undefined)
   const [showTable, setShowTable] = useState(false)
 
   // Re-runs by itself whenever an invoice is saved, imported or deleted.
@@ -80,21 +75,13 @@ function InvoiceReports() {
       ? `No invoices ${direction} ${periodTitle(selection)}`
       : `Show ${periodTitle({ ...selection, start })}`
 
+  /** Picking a status replaces whatever was picked; picking it again clears it. */
   const toggleStatus = (status: InvoiceStatus) =>
-    setStatusFilter(current => {
-      const next = new Set(current)
-      // `delete` reports whether it removed anything, which is the toggle.
-      if (!next.delete(status))
-        next.add(status)
-      return next
-    })
+    setStatusFilter(current => (current === status ? undefined : status))
 
   // "August 2026" / "2024" / "all time" -- always used mid-sentence.
   const periodLabel = periodTitle(selection)
-  const selectedStatuses = INVOICE_STATUSES.filter(status => statusFilter.has(status))
-  const statusPhrase = selectedStatuses.length === 0
-    ? undefined
-    : listPhrase(selectedStatuses.map(status => invoiceStatusStyles[status].label.toLowerCase()))
+  const statusPhrase = statusFilter && invoiceStatusStyles[statusFilter].label.toLowerCase()
 
   return (
     <>
@@ -182,7 +169,7 @@ function InvoiceReports() {
                 {INVOICE_STATUSES.map(status => {
                   const Icon = statusIcons[status]
                   const { total, count } = report.byStatus[status]
-                  const isOn = statusFilter.has(status)
+                  const isOn = statusFilter === status
                   const style = invoiceStatusStyles[status]
                   return (
                     <button
@@ -223,7 +210,7 @@ function InvoiceReports() {
                     <button
                       type="button"
                       className="text-sm text-blue-600 hover:underline"
-                      onClick={() => setStatusFilter(new Set())}
+                      onClick={() => setStatusFilter(undefined)}
                     >
                       Show all
                     </button>
