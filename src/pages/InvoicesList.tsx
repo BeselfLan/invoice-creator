@@ -69,7 +69,7 @@ const isBlank: Record<SortKey, (invoice: InvoiceSummary) => boolean> = {
 interface SortableHeaderProps {
   label: string
   sortKey: SortKey
-  sort: Sort | null
+  sort: Sort
   onSort: (key: SortKey) => void
   /** The column width, which lives on the `th` for `table-fixed` to read. */
   className?: string
@@ -77,7 +77,7 @@ interface SortableHeaderProps {
 
 /** A column heading that reorders the list when clicked. */
 function SortableHeader({ label, sortKey, sort, onSort, className }: SortableHeaderProps) {
-  const active = sort?.key === sortKey
+  const active = sort.key === sortKey
   const direction = active ? sort.direction : defaultDirection[sortKey]
   const nextDirection: SortDirection = active
     ? (direction === 'asc' ? 'desc' : 'asc')
@@ -105,17 +105,16 @@ function InvoicesList() {
   const invoices = useLiveQuery(() => listInvoices())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<string | null>(null)
-  // Null until a column is clicked, which leaves the list in the order the
-  // database hands it back: whatever was saved most recently, first.
-  const [sort, setSort] = useState<Sort | null>(null)
+  // The list opens most recent invoice first; clicking a column takes it from there.
+  const [sort, setSort] = useState<Sort>({ key: 'date', direction: 'desc' })
 
   const handleSort = (key: SortKey) =>
-    setSort(current => current?.key === key
+    setSort(current => current.key === key
       ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
       : { key, direction: defaultDirection[key] })
 
   const sortedInvoices = useMemo(() => {
-    if (!invoices || !sort)
+    if (!invoices)
       return invoices
 
     const sign = sort.direction === 'asc' ? 1 : -1

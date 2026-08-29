@@ -47,9 +47,9 @@ function InvoiceReports() {
   // Computed once: which month "this month" is must not change under the
   // reader mid-session.
   const [selection, setSelection] = useState<ReportSelection>(defaultSelection)
-  // One status at a time, or undefined for no status filter at all -- which is
-  // what pressing the selected tile again leaves behind.
-  const [statusFilter, setStatusFilter] = useState<InvoiceStatus | undefined>(undefined)
+  // One status at a time, opening on paid; undefined is no status filter at
+  // all -- which is what pressing the selected tile again leaves behind.
+  const [statusFilter, setStatusFilter] = useState<InvoiceStatus | undefined>('paid')
   const [showTable, setShowTable] = useState(false)
 
   // Re-runs by itself whenever an invoice is saved, imported or deleted.
