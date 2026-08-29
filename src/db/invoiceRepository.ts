@@ -29,6 +29,36 @@ export interface InvoiceSummary {
   updatedAt: number;
 }
 
+/** Named rather than inlined below, so the query cannot drift from the type. */
+const UNPAID_STATUS: InvoiceStatus = 'unpaid';
+
+/** The billing details that decide whether two invoices are for one customer. */
+export type CustomerIdentity = Pick<Invoice['customerInfo'], 'name'> &
+  Partial<Pick<Invoice['customerInfo'], 'address' | 'city'>>;
+
+/** An unpaid invoice already on file for the customer being billed. */
+export interface UnpaidCustomerInvoice {
+  id: number;
+  invoiceNo: string;
+  date: string;
+  total: number;
+}
+
+/**
+ * The three fields that identify a customer, trimmed and case-folded so that
+ * "  John Doe " and "john doe" are one person.
+ *
+ * Empty when any of the three is blank: a half-filled "Bill To" block is no
+ * evidence of who is being billed, and matching on it would tie together every
+ * invoice that happens to be missing the same fields.
+ */
+const customerIdentityKey = (customer: CustomerIdentity | undefined): string => {
+  const fields = [customer?.name, customer?.address, customer?.city]
+    .map(field => (field ?? '').trim().toLowerCase());
+  // A NUL between the fields, so "ab" + "c" cannot read as "a" + "bc".
+  return fields.every(Boolean) ? fields.join('\u0000') : '';
+};
+
 const num = (value: number | undefined, fallback = 0) =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
@@ -168,6 +198,17 @@ export async function getInvoice(id: number): Promise<StoredInvoice | undefined>
   return invoice && { ...invoice, id };
 }
 
+/** Line items filed under the invoice they belong to. */
+function groupItemsByInvoice(items: ItemRecord[]): Map<number, ItemRecord[]> {
+  const itemsByInvoice = new Map<number, ItemRecord[]>();
+  for (const item of items) {
+    const group = itemsByInvoice.get(item.invoiceId);
+    if (group) group.push(item);
+    else itemsByInvoice.set(item.invoiceId, [item]);
+  }
+  return itemsByInvoice;
+}
+
 interface JoinedInvoice {
   record: InvoiceRecord;
   customer?: CustomerRecord;
@@ -188,12 +229,7 @@ async function readAllInvoices(): Promise<JoinedInvoice[]> {
     const customersById = new Map(
       customers.filter((c): c is CustomerRecord => !!c).map((c) => [c.id, c]),
     );
-    const itemsByInvoice = new Map<number, ItemRecord[]>();
-    for (const item of items) {
-      const group = itemsByInvoice.get(item.invoiceId);
-      if (group) group.push(item);
-      else itemsByInvoice.set(item.invoiceId, [item]);
-    }
+    const itemsByInvoice = groupItemsByInvoice(items);
 
     return invoices.map((record) => ({
       record,
@@ -219,6 +255,49 @@ export async function listInvoices(): Promise<InvoiceSummary[]> {
     total: invoiceTotal(record, items),
     updatedAt: record.updatedAt,
   }));
+}
+
+/**
+ * The unpaid invoices already saved for one customer, newest first.
+ *
+ * A customer is matched on name, address and city together -- the three fields
+ * the "Bill To" block asks for -- so a repeat customer is recognised while two
+ * different people who merely share a name are not. Pass the invoice being
+ * edited as `excludeId` to keep it from reporting itself.
+ */
+export async function findUnpaidInvoicesForCustomer(
+  customer: CustomerIdentity | undefined,
+  excludeId?: number,
+): Promise<UnpaidCustomerInvoice[]> {
+  const wanted = customerIdentityKey(customer);
+  if (wanted === '') return [];
+
+  return db.transaction('r', db.customers, db.invoices, db.items, async () => {
+    // `status` is indexed, so this reads the unpaid invoices rather than all of them.
+    const unpaid = (await db.invoices.where('status').equals(UNPAID_STATUS).toArray())
+      .filter(record => record.id !== excludeId);
+    if (unpaid.length === 0) return [];
+
+    const customers = await db.customers.bulkGet(unpaid.map(record => record.customerId));
+    const matches = unpaid.filter((_, index) => customerIdentityKey(customers[index]) === wanted);
+    if (matches.length === 0) return [];
+
+    const items = await db.items
+      .where('invoiceId')
+      .anyOf(matches.map(match => match.id))
+      .toArray();
+    const itemsByInvoice = groupItemsByInvoice(items);
+
+    return matches
+      .map(record => ({
+        id: record.id,
+        invoiceNo: record.invoiceNo,
+        date: record.date,
+        total: invoiceTotal(record, itemsByInvoice.get(record.id) ?? []),
+      }))
+      // Newest first; an unreadable date sorts to the bottom rather than the top.
+      .sort((a, b) => (parseInvoiceDate(b.date) ?? 0) - (parseInvoiceDate(a.date) ?? 0));
+  });
 }
 
 /**

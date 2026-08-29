@@ -14,9 +14,11 @@ import { contactInfo } from '../constants/contactInfo'
 import { useForm } from 'react-hook-form'
 import { Database, FileDown, Plus, Save, Upload, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getInvoice, saveInvoice } from '../db/invoiceRepository'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { findUnpaidInvoicesForCustomer, getInvoice, saveInvoice } from '../db/invoiceRepository'
 import { fromJson, toJson } from '../utils/jsonConverter'
 import ResizeableTextArea from '../components/ResizeableTextArea'
+import UnpaidCustomerWarning from '../components/UnpaidCustomerWarning'
 import { COMPANY_NAME } from '../constants/constants'
 import { formatDateAsYYYYMMDD } from '../utils/formatDate'
 import { currencyFormatter } from '../utils/currency'
@@ -96,6 +98,23 @@ function InvoiceEditor() {
   const date = watch("date") || new Date();
   const invoiceNo = watch("invoiceNo") || "";
   const status = watch("status") ?? DEFAULT_INVOICE_STATUS;
+
+  const customerName = watch("customerInfo.name");
+  const customerAddress = watch("customerInfo.address");
+  const customerCity = watch("customerInfo.city");
+
+  // Re-runs when the billing details change and when the invoices table does,
+  // so the warning follows what is being typed and clears as soon as the debt
+  // it is warning about is marked paid. The invoice being edited is left out,
+  // since an unpaid invoice should not warn about itself.
+  const unpaidForCustomer = useLiveQuery(
+    () => findUnpaidInvoicesForCustomer(
+      { name: customerName, address: customerAddress, city: customerCity },
+      savedId,
+    ),
+    [customerName, customerAddress, customerCity, savedId],
+    [],
+  );
 
   const printRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -275,7 +294,10 @@ function InvoiceEditor() {
                   </div>
                 </div>
 
-                <h2 className="font-bold text-lg mb-2 pt-4">Bill To:</h2>
+                <div className="flex flex-row items-center gap-3 mb-2 pt-4">
+                  <h2 className="font-bold text-lg">Bill To:</h2>
+                  <UnpaidCustomerWarning invoices={unpaidForCustomer} />
+                </div>
                 <div className = "flex flex-row justify-between pb-4">
                   <div className="flex flex-col w-[60%]">
                     <input 
