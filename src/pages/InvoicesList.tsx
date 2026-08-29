@@ -225,131 +225,128 @@ function InvoicesList() {
   }
 
   return (
-    <>
-      <div className="w-[100vw] absolute z-[-10] bg-grid top-0 left-0 min-h-screen h-full"></div>
-      <div className="w-full flex flex-col items-center min-h-screen">
-        <div className="bg-white shadow-lg rounded-lg p-8 w-[8.5in] max-w-2xl flex flex-col">
-          <div className="flex flex-row justify-between items-center pb-4">
-            <h1 className="text-2xl font-bold">Saved Invoices</h1>
-            <div className="flex flex-row gap-2 items-center">
-              <input
-                type="file"
-                accept="application/json"
-                multiple
-                ref={fileInputRef}
-                style={{ display: 'none' }}
-                onChange={handleUpload}
-              />
-              <button
-                type="button"
-                title="Save every invoice to one backup file"
-                className="bg-white border border-slate-300 text-slate-700 text-sm p-3 rounded-md flex gap-2 items-center hover:bg-slate-100 hover:shadow-lg active:scale-[.8] disabled:opacity-50 disabled:hover:bg-white disabled:active:scale-100"
-                onClick={handleSaveAll}
-                disabled={!invoices || invoices.length === 0}
-              >
-                <SaveAll size={20} />
-                <span>Save all</span>
-              </button>
-              <button
-                type="button"
-                title="Upload saved invoice or backup files"
-                className="bg-white border border-slate-300 text-slate-700 text-sm p-3 rounded-md flex gap-2 items-center hover:bg-slate-100 hover:shadow-lg active:scale-[.8]"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload size={20} />
-                <span>Upload</span>
-              </button>
-              <Link
-                to="/"
-                className="bg-blue-600 text-white text-sm p-3 rounded-md flex gap-2 items-center no-underline hover:bg-blue-500 hover:shadow-xl active:scale-[.8]"
-              >
-                <FilePlus2 size={20} />
-                <span>New</span>
-              </Link>
-            </div>
+    <div className="w-full flex flex-col items-center min-h-screen">
+      <div className="bg-white shadow-lg rounded-lg p-8 w-[8.5in] max-w-2xl flex flex-col">
+        <div className="flex flex-row justify-between items-center pb-4">
+          <h1 className="text-2xl font-bold">Saved Invoices</h1>
+          <div className="flex flex-row gap-2 items-center">
+            <input
+              type="file"
+              accept="application/json"
+              multiple
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              onChange={handleUpload}
+            />
+            <button
+              type="button"
+              title="Save every invoice to one backup file"
+              className="bg-white border border-slate-300 text-slate-700 text-sm p-3 rounded-md flex gap-2 items-center hover:bg-slate-100 hover:shadow-lg active:scale-[.8] disabled:opacity-50 disabled:hover:bg-white disabled:active:scale-100"
+              onClick={handleSaveAll}
+              disabled={!invoices || invoices.length === 0}
+            >
+              <SaveAll size={20} />
+              <span>Save all</span>
+            </button>
+            <button
+              type="button"
+              title="Upload saved invoice or backup files"
+              className="bg-white border border-slate-300 text-slate-700 text-sm p-3 rounded-md flex gap-2 items-center hover:bg-slate-100 hover:shadow-lg active:scale-[.8]"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload size={20} />
+              <span>Upload</span>
+            </button>
+            <Link
+              to="/"
+              className="bg-blue-600 text-white text-sm p-3 rounded-md flex gap-2 items-center no-underline hover:bg-blue-500 hover:shadow-xl active:scale-[.8]"
+            >
+              <FilePlus2 size={20} />
+              <span>New</span>
+            </Link>
           </div>
-
-          {status && (
-            <div className="text-sm text-slate-600 bg-slate-100 rounded-md px-3 py-2 mb-3">{status}</div>
-          )}
-
-          {invoices === undefined ? (
-            <p className="text-sm text-gray-500 py-8 text-center">Loading invoices...</p>
-          ) : invoices.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-sm text-gray-500">No invoices saved yet.</p>
-              <p className="text-sm text-gray-500">
-                Create one and hit <span className="font-bold">Save</span> in the editor,
-                or <span className="font-bold">Upload</span> a backup file to restore.
-              </p>
-            </div>
-          ) : (
-            <table className="w-full text-sm table-fixed">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="border p-2 text-left w-[17%]">Invoice #</th>
-                  <SortableHeader label="Date" sortKey="date" sort={sort} onSort={handleSort} className="w-[16%]" />
-                  <SortableHeader label="Customer" sortKey="customer" sort={sort} onSort={handleSort} className="w-[27%]" />
-                  <SortableHeader label="Status" sortKey="status" sort={sort} onSort={handleSort} className="w-[14%]" />
-                  <th className="border p-2 text-right w-[16%]" title="Total billed, HST included">Total</th>
-                  <th className="border p-2 w-[70px]"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedInvoices?.map(invoice => (
-                  <tr
-                    key={invoice.id}
-                    className="cursor-pointer hover:bg-slate-100"
-                    onClick={() => navigate(`/invoices/${invoice.id}`)}
-                    title={`Last saved ${savedAtFormatter.format(invoice.updatedAt)}\nid ${invoice.uuid}`}
-                  >
-                    <td className="border p-2">{invoice.invoiceNo || '--'}</td>
-                    <td className="border p-2">{invoice.date || '--'}</td>
-                    <td className="border p-2">
-                      <div>{invoice.customerName || 'Unnamed customer'}</div>
-                      <div className="text-xs text-gray-500">
-                        {[invoice.customerAddress, invoice.customerCity].filter(Boolean).join(', ')}
-                      </div>
-                    </td>
-                    <td className="border p-2">
-                      <span className={`text-xs px-2 py-1 rounded-full border ${invoiceStatusStyles[invoice.status].badge}`}>
-                        {invoiceStatusStyles[invoice.status].label}
-                      </span>
-                    </td>
-                    <td className="border p-2 text-right">
-                      <div>{currencyFormatter.format(invoice.total)}</div>
-                      <div className="text-xs text-gray-500">
-                        {invoice.itemCount} item{invoice.itemCount === 1 ? '' : 's'}
-                      </div>
-                    </td>
-                    <td className="border p-2">
-                      <div className="flex flex-row gap-2 justify-center items-center">
-                        <button
-                          type="button"
-                          title="Save invoice as JSON"
-                          className="text-gray-500 hover:text-blue-600"
-                          onClick={event => handleDownload(event, invoice)}
-                        >
-                          <Save size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          title="Delete invoice"
-                          className="text-gray-500 hover:text-red-500"
-                          onClick={event => handleDelete(event, invoice.id, invoice.invoiceNo || String(invoice.id))}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
         </div>
+
+        {status && (
+          <div className="text-sm text-slate-600 bg-slate-100 rounded-md px-3 py-2 mb-3">{status}</div>
+        )}
+
+        {invoices === undefined ? (
+          <p className="text-sm text-gray-500 py-8 text-center">Loading invoices...</p>
+        ) : invoices.length === 0 ? (
+          <div className="py-12 text-center">
+            <p className="text-sm text-gray-500">No invoices saved yet.</p>
+            <p className="text-sm text-gray-500">
+              Create one and hit <span className="font-bold">Save</span> in the editor,
+              or <span className="font-bold">Upload</span> a backup file to restore.
+            </p>
+          </div>
+        ) : (
+          <table className="w-full text-sm table-fixed">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border p-2 text-left w-[17%]">Invoice #</th>
+                <SortableHeader label="Date" sortKey="date" sort={sort} onSort={handleSort} className="w-[16%]" />
+                <SortableHeader label="Customer" sortKey="customer" sort={sort} onSort={handleSort} className="w-[27%]" />
+                <SortableHeader label="Status" sortKey="status" sort={sort} onSort={handleSort} className="w-[14%]" />
+                <th className="border p-2 text-right w-[16%]" title="Total billed, HST included">Total</th>
+                <th className="border p-2 w-[70px]"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedInvoices?.map(invoice => (
+                <tr
+                  key={invoice.id}
+                  className="cursor-pointer hover:bg-slate-100"
+                  onClick={() => navigate(`/invoices/${invoice.id}`)}
+                  title={`Last saved ${savedAtFormatter.format(invoice.updatedAt)}\nid ${invoice.uuid}`}
+                >
+                  <td className="border p-2">{invoice.invoiceNo || '--'}</td>
+                  <td className="border p-2">{invoice.date || '--'}</td>
+                  <td className="border p-2">
+                    <div>{invoice.customerName || 'Unnamed customer'}</div>
+                    <div className="text-xs text-gray-500">
+                      {[invoice.customerAddress, invoice.customerCity].filter(Boolean).join(', ')}
+                    </div>
+                  </td>
+                  <td className="border p-2">
+                    <span className={`text-xs px-2 py-1 rounded-full border ${invoiceStatusStyles[invoice.status].badge}`}>
+                      {invoiceStatusStyles[invoice.status].label}
+                    </span>
+                  </td>
+                  <td className="border p-2 text-right">
+                    <div>{currencyFormatter.format(invoice.total)}</div>
+                    <div className="text-xs text-gray-500">
+                      {invoice.itemCount} item{invoice.itemCount === 1 ? '' : 's'}
+                    </div>
+                  </td>
+                  <td className="border p-2">
+                    <div className="flex flex-row gap-2 justify-center items-center">
+                      <button
+                        type="button"
+                        title="Save invoice as JSON"
+                        className="text-gray-500 hover:text-blue-600"
+                        onClick={event => handleDownload(event, invoice)}
+                      >
+                        <Save size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete invoice"
+                        className="text-gray-500 hover:text-red-500"
+                        onClick={event => handleDelete(event, invoice.id, invoice.invoiceNo || String(invoice.id))}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
-    </>
+    </div>
   )
 }
 
