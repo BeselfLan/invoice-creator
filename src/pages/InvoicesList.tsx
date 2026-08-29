@@ -24,7 +24,7 @@ const savedAtFormatter = new Intl.DateTimeFormat('en-CA', {
 })
 
 /** The columns the list can be reordered by. */
-type SortKey = 'date' | 'status' | 'customer'
+type SortKey = 'date' | 'status' | 'address'
 
 type SortDirection = 'asc' | 'desc'
 
@@ -37,14 +37,14 @@ interface Sort {
 const defaultDirection: Record<SortKey, SortDirection> = {
   date: 'desc',
   status: 'asc',
-  customer: 'asc',
+  address: 'asc',
 }
 
 /** Spelled out on the header button, since an arrow alone is ambiguous here. */
 const sortLabels: Record<SortKey, Record<SortDirection, string>> = {
   date: { desc: 'most recent first', asc: 'oldest first' },
   status: { asc: 'pending, unpaid, then paid', desc: 'paid, unpaid, then pending' },
-  customer: { asc: 'customer A to Z', desc: 'customer Z to A' },
+  address: { asc: 'address A to Z', desc: 'address Z to A' },
 }
 
 /** Ascending comparators; a descending sort negates the result. */
@@ -52,18 +52,18 @@ const comparators: Record<SortKey, (a: InvoiceSummary, b: InvoiceSummary) => num
   // Blank dates are filtered out below, so the fallback here never decides an order.
   date: (a, b) => (parseInvoiceDate(a.date) ?? 0) - (parseInvoiceDate(b.date) ?? 0),
   status: (a, b) => invoiceStatusSortOrder[a.status] - invoiceStatusSortOrder[b.status],
-  customer: (a, b) => a.customerName.localeCompare(b.customerName, 'en-CA', { sensitivity: 'base' }),
+  address: (a, b) => a.customerAddress.localeCompare(b.customerAddress, 'en-CA', { sensitivity: 'base' }),
 }
 
 /**
- * Rows the sorted column cannot speak for -- no readable date, no customer
- * name. They sit at the bottom whichever way the column points, rather than
+ * Rows the sorted column cannot speak for -- no readable date, no billing
+ * address. They sit at the bottom whichever way the column points, rather than
  * flipping up to the top and burying the rows that were actually asked for.
  */
 const isBlank: Record<SortKey, (invoice: InvoiceSummary) => boolean> = {
   date: invoice => parseInvoiceDate(invoice.date) === undefined,
   status: () => false,
-  customer: invoice => invoice.customerName.trim() === '',
+  address: invoice => invoice.customerAddress.trim() === '',
 }
 
 interface SortableHeaderProps {
@@ -129,7 +129,7 @@ function InvoicesList() {
         return aBlank ? 1 : -1
 
       const result = sign * compare(a, b)
-      // Same date, status or customer: fall back to the default ordering so
+      // Same date, status or address: fall back to the default ordering so
       // rows never shuffle between renders.
       return result !== 0 ? result : b.updatedAt - a.updatedAt
     })
@@ -149,7 +149,7 @@ function InvoicesList() {
       const invoice = await getInvoiceForExport(summary.id)
       if (!invoice)
         return
-      const label = invoice.customerInfo?.name?.trim() || invoice.invoiceNo
+      const label = invoice.customerInfo?.address?.trim() || invoice.invoiceNo
       toJson(invoice, ['invoice', label, invoice.date?.replace(/\s/g, '-')].filter(Boolean).join('-'))
     } catch (error) {
       console.error('Failed to export invoice', error)
@@ -287,7 +287,7 @@ function InvoicesList() {
               <tr className="bg-gray-100">
                 <th className="border p-2 text-left w-[17%]">Invoice #</th>
                 <SortableHeader label="Date" sortKey="date" sort={sort} onSort={handleSort} className="w-[16%]" />
-                <SortableHeader label="Customer" sortKey="customer" sort={sort} onSort={handleSort} className="w-[27%]" />
+                <SortableHeader label="Address" sortKey="address" sort={sort} onSort={handleSort} className="w-[27%]" />
                 <SortableHeader label="Status" sortKey="status" sort={sort} onSort={handleSort} className="w-[14%]" />
                 <th className="border p-2 text-right w-[16%]" title="Total billed, HST included">Total</th>
                 <th className="border p-2 w-[70px]"></th>
@@ -304,10 +304,8 @@ function InvoicesList() {
                   <td className="border p-2">{invoice.invoiceNo || '--'}</td>
                   <td className="border p-2">{invoice.date || '--'}</td>
                   <td className="border p-2">
-                    <div>{invoice.customerName || 'Unnamed customer'}</div>
-                    <div className="text-xs text-gray-500">
-                      {[invoice.customerAddress, invoice.customerCity].filter(Boolean).join(', ')}
-                    </div>
+                    <div>{invoice.customerAddress || 'No address'}</div>
+                    <div className="text-xs text-gray-500">{invoice.customerCity}</div>
                   </td>
                   <td className="border p-2">
                     <span className={`text-xs px-2 py-1 rounded-full border ${invoiceStatusStyles[invoice.status].badge}`}>

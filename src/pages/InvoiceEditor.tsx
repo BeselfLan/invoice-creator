@@ -141,7 +141,7 @@ function InvoiceEditor() {
   setDefaultsValues() 
 
   const handleExportJson = (invoice: Invoice) => {
-    toJson(invoice, `invoice-${invoice.customerInfo?.name}-${invoice?.date?.replace(/\s/g, '-')}`)
+    toJson(invoice, `invoice-${invoice.customerInfo?.address}-${invoice?.date?.replace(/\s/g, '-')}`)
   }
 
   const handleDownloadPdf = async (invoice: Invoice) => {
