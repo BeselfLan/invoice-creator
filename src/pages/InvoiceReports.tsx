@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { AlertCircle, CheckCircle2, Clock, Table2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock, Table2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import AmountTypeChart from '../components/AmountTypeChart'
 import { amountTypeStyles } from '../constants/amountType'
@@ -10,10 +10,15 @@ import { AMOUNT_TYPES, type AmountType } from '../models/AmountType'
 import { INVOICE_STATUSES, type InvoiceStatus } from '../models/Invoice'
 import { currencyFormatter } from '../utils/currency'
 import {
-  REPORT_RANGES,
+  REPORT_PERIODS,
   buildReport,
-  reportRangeLabels,
-  type ReportRange,
+  defaultSelection,
+  periodNeighbours,
+  periodTitle,
+  reportPeriodLabels,
+  selectPeriod,
+  type ReportPeriod,
+  type ReportSelection,
 } from '../utils/invoiceStats'
 
 const statusIcons: Record<InvoiceStatus, typeof Clock> = {
@@ -38,10 +43,16 @@ const listPhrase = (parts: string[]) =>
     ? parts[0] ?? ''
     : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 
+const stepButtonStyle =
+  'p-1 rounded-md border border-slate-300 text-slate-700 transition-colors hover:bg-slate-100 ' +
+  'disabled:opacity-40 disabled:hover:bg-white disabled:cursor-not-allowed'
+
 const sentenceCase = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
 function InvoiceReports() {
-  const [range, setRange] = useState<ReportRange>('month')
+  // Computed once: which month "this month" is must not change under the
+  // reader mid-session.
+  const [selection, setSelection] = useState<ReportSelection>(defaultSelection)
   // Empty means no status filter: switching every button off shows everything.
   const [statusFilter, setStatusFilter] = useState<ReadonlySet<InvoiceStatus>>(new Set())
   const [showTable, setShowTable] = useState(false)
@@ -50,9 +61,24 @@ function InvoiceReports() {
   const stats = useLiveQuery(() => listInvoiceStats())
 
   const report = useMemo(
-    () => (stats ? buildReport(stats, range, statusFilter) : undefined),
-    [stats, range, statusFilter],
+    () => (stats ? buildReport(stats, selection, statusFilter) : undefined),
+    [stats, selection, statusFilter],
   )
+
+  // Where the arrows lead; either is undefined when there is nothing that way.
+  const neighbours = useMemo(
+    () => (stats ? periodNeighbours(stats, selection) : {}),
+    [stats, selection],
+  )
+
+  const step = (start: number | undefined) =>
+    start !== undefined && setSelection(current => ({ ...current, start }))
+
+  /** Names where an arrow leads, or why it is dead. */
+  const stepTitle = (start: number | undefined, direction: 'before' | 'after') =>
+    start === undefined
+      ? `No invoices ${direction} ${periodTitle(selection)}`
+      : `Show ${periodTitle({ ...selection, start })}`
 
   const toggleStatus = (status: InvoiceStatus) =>
     setStatusFilter(current => {
@@ -63,7 +89,8 @@ function InvoiceReports() {
       return next
     })
 
-  const rangeLabel = reportRangeLabels[range].toLowerCase()
+  // "August 2026" / "2024" / "all time" -- always used mid-sentence.
+  const periodLabel = periodTitle(selection)
   const selectedStatuses = INVOICE_STATUSES.filter(status => statusFilter.has(status))
   const statusPhrase = selectedStatuses.length === 0
     ? undefined
@@ -86,22 +113,58 @@ function InvoiceReports() {
 
           {/* Both filters sit above everything they scope: the total, the chart
               and both tables always describe the same set of invoices. */}
-          <div className="flex flex-row flex-wrap gap-2 pb-4" role="group" aria-label="Time range">
-            {REPORT_RANGES.map(option => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={range === option}
-                className={`text-sm px-3 py-1 rounded-full border transition-colors ${
-                  range === option
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                }`}
-                onClick={() => setRange(option)}
-              >
-                {reportRangeLabels[option]}
-              </button>
-            ))}
+          <div className="flex flex-row flex-wrap gap-x-4 gap-y-2 justify-between items-center pb-4">
+            <div className="flex flex-row flex-wrap gap-2" role="group" aria-label="Period length">
+              {REPORT_PERIODS.map((option: ReportPeriod) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={selection.period === option}
+                  className={`text-sm px-3 py-1 rounded-full border transition-colors ${
+                    selection.period === option
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                  }`}
+                  onClick={() => setSelection(current => selectPeriod(current, option))}
+                >
+                  {reportPeriodLabels[option]}
+                </button>
+              ))}
+            </div>
+
+            {/* "All time" is the one width with nothing either side of it. */}
+            {selection.period !== 'all' && (
+              <div className="flex flex-row items-center gap-1">
+                <button
+                  type="button"
+                  className={stepButtonStyle}
+                  disabled={neighbours.previous === undefined}
+                  title={stepTitle(neighbours.previous, 'before')}
+                  aria-label={stepTitle(neighbours.previous, 'before')}
+                  onClick={() => step(neighbours.previous)}
+                >
+                  <ChevronLeft size={18} aria-hidden="true" />
+                </button>
+                {/* A fixed width so the label does not shove the arrows around
+                    as it steps from "May 2026" to "September 2026". */}
+                <span
+                  className="text-sm font-semibold text-slate-900 text-center min-w-[8.5rem]"
+                  aria-live="polite"
+                >
+                  {sentenceCase(periodLabel)}
+                </span>
+                <button
+                  type="button"
+                  className={stepButtonStyle}
+                  disabled={neighbours.next === undefined}
+                  title={stepTitle(neighbours.next, 'after')}
+                  aria-label={stepTitle(neighbours.next, 'after')}
+                  onClick={() => step(neighbours.next)}
+                >
+                  <ChevronRight size={18} aria-hidden="true" />
+                </button>
+              </div>
+            )}
           </div>
 
           {report === undefined ? (
@@ -154,7 +217,7 @@ function InvoiceReports() {
               <div className="pb-8">
                 <div className="text-sm text-slate-600 flex flex-row flex-wrap gap-x-2 items-baseline">
                   <span>
-                    {statusPhrase ? sentenceCase(statusPhrase) : 'Total billed'}, {rangeLabel}
+                    {statusPhrase ? sentenceCase(statusPhrase) : 'Total billed'}, {periodLabel}
                   </span>
                   {statusPhrase && (
                     <button
@@ -178,11 +241,12 @@ function InvoiceReports() {
                 <div className="border-t border-slate-200 py-12 text-center">
                   <p className="text-sm text-gray-500">
                     {statusPhrase
-                      ? `No ${statusPhrase} invoices in this range.`
-                      : 'No invoices dated in this range.'}
+                      ? `No ${statusPhrase} invoices in ${periodLabel}.`
+                      : `No invoices dated in ${periodLabel}.`}
                   </p>
                   <p className="text-sm text-gray-500">
-                    Try {statusPhrase ? 'another status or ' : ''}a wider time range.
+                    Try {statusPhrase ? 'another status, ' : ''}
+                    {selection.period === 'all' ? 'a different filter' : 'the arrows, or a wider period'}.
                   </p>
                 </div>
               ) : (
@@ -197,14 +261,14 @@ function InvoiceReports() {
                     <AmountTypeChart
                       buckets={report.buckets}
                       scopeLabel={statusPhrase
-                        ? `${reportRangeLabels[range]}, ${statusPhrase} invoices only`
-                        : reportRangeLabels[range]}
+                        ? `${periodLabel}, ${statusPhrase} invoices only`
+                        : periodLabel}
                     />
                   </div>
 
                   <table className="w-full text-sm table-fixed mt-6">
                     <caption className="sr-only">
-                      Amount billed by charge type, {rangeLabel}
+                      Amount billed by charge type, {periodLabel}
                     </caption>
                     <thead>
                       <tr className="bg-gray-100">
@@ -254,7 +318,7 @@ function InvoiceReports() {
                   {showTable && (
                     <table className="w-full text-sm table-fixed mt-3">
                       <caption className="sr-only">
-                        Amount billed per {unitNouns[report.unit]}, {rangeLabel}
+                        Amount billed per {unitNouns[report.unit]}, {periodLabel}
                       </caption>
                       <thead>
                         <tr className="bg-gray-100">

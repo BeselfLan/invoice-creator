@@ -79,15 +79,19 @@ const monthLabel = new Intl.DateTimeFormat('en-CA', { month: 'short' })
 const fullDateLabel = new Intl.DateTimeFormat('en-CA', { dateStyle: 'medium' })
 
 /**
- * The short label under a column on the axis. A monthly axis that runs across
- * a new year needs the year on every label -- otherwise a fourteen month span
- * reads "Aug ... Aug" and the two ends look like the same month.
+ * The short label under a column on the axis.
+ *
+ * `longSpan` says the axis runs further than one turn of the unit's own cycle,
+ * where the plain label stops identifying its column: a month of days cannot
+ * be labelled with weekday names, because "Mon" comes round four or five
+ * times, and a span crossing new year cannot use bare month names, because a
+ * fourteen month span would read "Aug ... Aug" and look like one month twice.
  */
-export function bucketLabel(ms: number, unit: BucketUnit, withYear = false): string {
+export function bucketLabel(ms: number, unit: BucketUnit, longSpan = false): string {
   switch (unit) {
-    case 'day': return dayLabel.format(ms)
+    case 'day': return longSpan ? String(new Date(ms).getDate()) : dayLabel.format(ms)
     case 'week': return dateLabel.format(ms)
-    case 'month': return withYear
+    case 'month': return longSpan
       ? `${monthLabel.format(ms)} '${String(new Date(ms).getFullYear()).slice(2)}`
       : monthLabel.format(ms)
     case 'year': return String(new Date(ms).getFullYear())

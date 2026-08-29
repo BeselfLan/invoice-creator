@@ -25,32 +25,96 @@ export interface InvoiceStat {
   total: number
 }
 
-export const REPORT_RANGES = ['week', 'month', 'year', 'all'] as const
+/** How wide a report's window is: one named week, month or year, or everything. */
+export const REPORT_PERIODS = ['week', 'month', 'year', 'all'] as const
 
-export type ReportRange = typeof REPORT_RANGES[number]
+export type ReportPeriod = typeof REPORT_PERIODS[number]
 
-export const reportRangeLabels: Record<ReportRange, string> = {
-  week: 'Last week',
-  month: 'Last month',
-  year: 'Last year',
+/** What the buttons that pick the width are called. */
+export const reportPeriodLabels: Record<ReportPeriod, string> = {
+  week: 'Week',
+  month: 'Month',
+  year: 'Year',
   all: 'All time',
+}
+
+/**
+ * Which week, month or year is on screen. `start` is that period's first
+ * moment; it is kept even while "All time" is showing, so switching away and
+ * back returns to the period the reader was last looking at.
+ */
+export interface ReportSelection {
+  period: ReportPeriod
+  start: number
+}
+
+/** Reports open on the month we are in. */
+export const defaultSelection = (now = Date.now()): ReportSelection =>
+  ({ period: 'month', start: startOfBucket(now, 'month') })
+
+/**
+ * The columns a named period is drawn with. Every one of these nests exactly
+ * inside its period -- days divide a week and a month, months divide a year --
+ * so no column can straddle the edge and pull a neighbouring period's invoices
+ * into the totals.
+ */
+const PERIOD_COLUMNS: Record<Exclude<ReportPeriod, 'all'>, BucketUnit> = {
+  week: 'day',
+  month: 'day',
+  year: 'month',
+}
+
+/**
+ * Changes how wide the window is while staying over the same moment, so
+ * stepping from August 2026 up to a year lands on 2026 rather than jumping to
+ * today.
+ */
+export const selectPeriod = (selection: ReportSelection, period: ReportPeriod): ReportSelection =>
+  period === 'all'
+    ? { ...selection, period }
+    : { period, start: startOfBucket(selection.start, period) }
+
+/** What the period on screen is called: "August 2026", "2024", "all time". */
+export const periodTitle = (selection: ReportSelection): string =>
+  selection.period === 'all'
+    ? 'all time'
+    : bucketTitle(selection.start, selection.period)
+
+/**
+ * Where the arrows lead, or `undefined` where they should be dead.
+ *
+ * The bounds come from the invoices rather than from the calendar: stepping
+ * back stops at the period holding the oldest invoice instead of walking off
+ * into empty months, and stepping forward reaches the period we are in -- or
+ * further, if an invoice is dated ahead of today, so that no invoice can end up
+ * somewhere the arrows cannot reach.
+ */
+export function periodNeighbours(
+  stats: InvoiceStat[],
+  selection: ReportSelection,
+  now = Date.now(),
+): { previous?: number; next?: number } {
+  if (selection.period === 'all' || stats.length === 0)
+    return {}
+
+  const unit = selection.period
+  const dates = stats.map(stat => stat.dateMs)
+  const earliest = startOfBucket(Math.min(...dates), unit)
+  const latest = startOfBucket(Math.max(now, ...dates), unit)
+
+  const previous = addUnits(selection.start, unit, -1)
+  const next = addUnits(selection.start, unit, 1)
+
+  return {
+    previous: previous >= earliest ? previous : undefined,
+    next: next <= latest ? next : undefined,
+  }
 }
 
 /** The columns of the timeline, and how wide each one is. */
 interface Timeline {
   unit: BucketUnit
   starts: number[]
-}
-
-/**
- * A fixed range is a whole number of columns ending with the one we are in,
- * so the range the totals cover and the range the chart draws are the same
- * thing -- the two can never disagree about which invoices they counted.
- */
-const FIXED_TIMELINES: Record<Exclude<ReportRange, 'all'>, { unit: BucketUnit; count: number }> = {
-  week: { unit: 'day', count: 7 },
-  month: { unit: 'week', count: 5 },
-  year: { unit: 'month', count: 12 },
 }
 
 /** Coarsest-last, for picking a column width that "All time" can actually draw. */
@@ -83,11 +147,14 @@ const timelineForSpan = (from: number, to: number): Timeline => {
   return { unit: 'year', starts: bucketStarts(from, to, 'year') }
 }
 
-const timelineFor = (stats: InvoiceStat[], range: ReportRange, now: number): Timeline => {
-  if (range !== 'all') {
-    const { unit, count } = FIXED_TIMELINES[range]
-    const first = addUnits(startOfBucket(now, unit), unit, -(count - 1))
-    return { unit, starts: bucketStarts(first, now, unit) }
+const timelineFor = (stats: InvoiceStat[], selection: ReportSelection, now: number): Timeline => {
+  if (selection.period !== 'all') {
+    const unit = PERIOD_COLUMNS[selection.period]
+    const from = startOfBucket(selection.start, selection.period)
+    // One millisecond short of the next period, so the last column drawn is the
+    // last one that belongs to this period.
+    const to = addUnits(from, selection.period, 1) - 1
+    return { unit, starts: bucketStarts(from, to, unit) }
   }
 
   if (stats.length === 0)
@@ -137,33 +204,37 @@ const emptyStatusTotals = (): Record<InvoiceStatus, StatusTotal> =>
   ) as Record<InvoiceStatus, StatusTotal>
 
 /**
- * Buckets and totals every invoice that falls inside `range`. Anything dated
- * outside the timeline is left out of both the chart and the totals, so every
- * number on the page describes the same set of invoices.
+ * Buckets and totals every invoice that falls inside the selected period.
+ * Anything dated outside the timeline is left out of both the chart and the
+ * totals, so every number on the page describes the same set of invoices --
+ * which, for a named period, is exactly the invoices dated within it.
  *
  * `statuses` narrows that set further; an empty or missing set means no status
  * filter at all, which is what deselecting every button leaves behind.
  *
- * The timeline itself is measured from every in-range invoice rather than the
- * ones that survive the filter, so toggling a status re-draws the columns
+ * The timeline itself is measured from the period rather than from the
+ * invoices that survive the filter, so toggling a status re-draws the columns
  * without moving the axis under them.
  */
 export function buildReport(
   stats: InvoiceStat[],
-  range: ReportRange,
+  selection: ReportSelection,
   statuses?: ReadonlySet<InvoiceStatus>,
   now = Date.now(),
 ): ReportSummary {
-  const { unit, starts } = timelineFor(stats, range, now)
+  const { unit, starts } = timelineFor(stats, selection, now)
 
-  // Only a monthly axis is ambiguous without its year; weeks and days carry a
-  // date, and a yearly axis is nothing but years.
-  const withYear = unit === 'month' &&
-    new Date(starts[0]).getFullYear() !== new Date(starts[starts.length - 1]).getFullYear()
+  // Every label has to identify its own column. Weekday names only manage that
+  // over a single week, and bare month names only within one year; past that
+  // the axis needs dates and years instead.
+  const longSpan = unit === 'day'
+    ? starts.length > 7
+    : unit === 'month' &&
+      new Date(starts[0]).getFullYear() !== new Date(starts[starts.length - 1]).getFullYear()
 
   const buckets: ReportBucket[] = starts.map(start => ({
     start,
-    label: bucketLabel(start, unit, withYear),
+    label: bucketLabel(start, unit, longSpan),
     title: bucketTitle(start, unit),
     amounts: emptyBreakdown(),
     total: 0,
