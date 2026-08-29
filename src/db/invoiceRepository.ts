@@ -34,14 +34,21 @@ const num = (value: number | undefined, fallback = 0) =>
 const optionalNum = (value: number | undefined) =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
-const invoiceTotal = (
-  invoice: Pick<InvoiceRecord, 'labourFee' | 'other1Fee' | 'other2Fee'>,
+/** What one stored invoice bills, split the way the reports read it. */
+const breakdownFor = (
+  invoice: Pick<InvoiceRecord, 'labourFee' | 'parkingCost'>,
   items: ItemRecord[],
-) =>
-  items.reduce((sum, item) => sum + num(item.amount), 0) +
-  num(invoice.labourFee) +
-  num(invoice.other1Fee) +
-  num(invoice.other2Fee);
+) => breakdownOf({ items, labourFee: invoice.labourFee, parkingCost: invoice.parkingCost });
+
+/**
+ * The invoice total, HST included -- the same figure the editor shows. Taken
+ * off the report breakdown rather than summed separately, so the list and the
+ * reports can never disagree about what an invoice came to.
+ */
+const invoiceTotal = (
+  invoice: Pick<InvoiceRecord, 'labourFee' | 'parkingCost'>,
+  items: ItemRecord[],
+) => breakdownTotal(breakdownFor(invoice, items));
 
 /** Joins the three tables back into the shape the invoice form works with. */
 const toInvoice = (
@@ -75,10 +82,7 @@ const toInvoice = (
       amount: num(item.amount),
     })),
   labourFee: num(invoice.labourFee),
-  other1: invoice.other1 ?? '',
-  other1Fee: num(invoice.other1Fee),
-  other2: invoice.other2 ?? '',
-  other2Fee: num(invoice.other2Fee),
+  parkingCost: num(invoice.parkingCost),
 });
 
 /**
@@ -121,10 +125,7 @@ export async function saveInvoice(invoice: Invoice, id?: number): Promise<number
       description: invoice.description ?? '',
       recommendation: invoice.recommendation ?? '',
       labourFee: num(invoice.labourFee),
-      other1: invoice.other1 ?? '',
-      other1Fee: num(invoice.other1Fee),
-      other2: invoice.other2 ?? '',
-      other2Fee: num(invoice.other2Fee),
+      parkingCost: num(invoice.parkingCost),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -237,12 +238,7 @@ export async function listInvoices(): Promise<InvoiceSummary[]> {
 export async function listInvoiceStats(): Promise<InvoiceStat[]> {
   const joined = await readAllInvoices();
   return joined.map(({ record, customer, items }) => {
-    const amounts = breakdownOf({
-      items,
-      labourFee: record.labourFee,
-      other1Fee: record.other1Fee,
-      other2Fee: record.other2Fee,
-    });
+    const amounts = breakdownFor(record, items);
     return {
       id: record.id,
       status: record.status ?? DEFAULT_INVOICE_STATUS,
@@ -310,10 +306,11 @@ export function normalizeImportedInvoice(parsed: unknown): Invoice | null {
       }
     }),
     labourFee: num(raw.labourFee as number | undefined),
-    other1: str(raw.other1),
-    other1Fee: num(raw.other1Fee as number | undefined),
-    other2: str(raw.other2),
-    other2Fee: num(raw.other2Fee as number | undefined),
+    // Files exported before parking replaced the two "other" fees carry those
+    // instead; their money is folded in rather than dropped on the way back.
+    parkingCost: raw.parkingCost === undefined
+      ? num(raw.other1Fee as number | undefined) + num(raw.other2Fee as number | undefined)
+      : num(raw.parkingCost as number | undefined),
   }
 }
 

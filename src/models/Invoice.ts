@@ -45,10 +45,7 @@ export type Invoice = {
     amount: number,
   }[],
   labourFee: number,
-  other1: string,
-  other1Fee: number,
-  other2: string,
-  other2Fee: number,
+  parkingCost: number, // This cost already includes hst
 }
 
 export const baseInvoice: Invoice = {
@@ -93,8 +90,5 @@ export const baseInvoice: Invoice = {
     }
   ],
   labourFee: 0,
-  other1: "",
-  other1Fee: 0,
-  other2: "",
-  other2Fee: 0,
+  parkingCost: 0,
 }

@@ -2,24 +2,27 @@ import type { Invoice } from './Invoice'
 
 /**
  * The kinds of money an invoice bills for. Reports split totals along these
- * three, so they have to cover every field that contributes to a total.
+ * four, so they have to cover every field that contributes to a total.
  */
-export const AMOUNT_TYPES = ['parts', 'labour', 'other'] as const
+export const AMOUNT_TYPES = ['parts', 'labour', 'parking', 'tax'] as const
 
 export type AmountType = typeof AMOUNT_TYPES[number]
 
 export type AmountBreakdown = Record<AmountType, number>
 
-export const emptyBreakdown = (): AmountBreakdown => ({ parts: 0, labour: 0, other: 0 })
+/** The rate the editor charges on everything except the parking cost. */
+export const HST_RATE = 0.13
+
+export const emptyBreakdown = (): AmountBreakdown =>
+  ({ parts: 0, labour: 0, parking: 0, tax: 0 })
 
 export const breakdownTotal = (breakdown: AmountBreakdown) =>
-  breakdown.parts + breakdown.labour + breakdown.other
+  AMOUNT_TYPES.reduce((sum, type) => sum + breakdown[type], 0)
 
 /** Adds `addend` into `target`, in place. */
 export const addBreakdown = (target: AmountBreakdown, addend: AmountBreakdown) => {
-  target.parts += addend.parts
-  target.labour += addend.labour
-  target.other += addend.other
+  for (const type of AMOUNT_TYPES)
+    target[type] += addend[type]
 }
 
 /**
@@ -37,12 +40,15 @@ export const isLabourItem = (name: string | undefined) => LABOUR_ITEM.test(name 
 const num = (value: number | undefined) =>
   typeof value === 'number' && Number.isFinite(value) ? value : 0
 
-/** The parts / labour / other split of everything one invoice bills for. */
+/**
+ * The parts / labour / parking / tax split of everything one invoice bills for,
+ * matching the totals the editor shows: HST on the parts and the labour, and
+ * the parking cost passed through as billed.
+ */
 export function breakdownOf(invoice: {
   items?: Pick<Invoice['items'][number], 'name' | 'amount'>[]
   labourFee?: number
-  other1Fee?: number
-  other2Fee?: number
+  parkingCost?: number
 }): AmountBreakdown {
   const breakdown = emptyBreakdown()
 
@@ -54,7 +60,11 @@ export function breakdownOf(invoice: {
   }
 
   breakdown.labour += num(invoice.labourFee)
-  breakdown.other += num(invoice.other1Fee) + num(invoice.other2Fee)
+  // Parking is billed at what it cost with its tax already inside it, so it is
+  // the one charge HST is not added on top of. That tax cannot be separated
+  // back out either, which is why it stays counted as parking rather than tax.
+  breakdown.parking += num(invoice.parkingCost)
+  breakdown.tax = (breakdown.parts + breakdown.labour) * HST_RATE
 
   return breakdown
 }

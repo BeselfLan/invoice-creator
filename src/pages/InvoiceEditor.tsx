@@ -7,6 +7,7 @@ import {
   baseInvoice,
   getCurrentDate,
 } from '../models/Invoice'
+import { HST_RATE } from '../models/AmountType'
 import { invoiceStatusStyles } from '../constants/invoiceStatus'
 import { contactInfo } from '../constants/contactInfo'
 import { useForm } from 'react-hook-form'
@@ -91,8 +92,7 @@ function InvoiceEditor() {
 
   const amounts = watch("items")?.map(item => item.amount) ?? [];
   const labourFee = watch("labourFee") || 0
-  const other1Fee = watch("other1Fee") || 0;
-  const other2Fee = watch("other2Fee") || 0;
+  const parkingCost = watch("parkingCost") || 0;
   const date = watch("date") || new Date();
   const invoiceNo = watch("invoiceNo") || "";
   const status = watch("status") ?? DEFAULT_INVOICE_STATUS;
@@ -170,7 +170,11 @@ function InvoiceEditor() {
     return amounts?.reduce((sum, amount) => sum + amount, 0) || 0
   }, [amounts])
 
-  const calculatedTotal = useMemo(() => calculatedSubtotal + labourFee + other1Fee + other2Fee, [labourFee, other1Fee, other2Fee, calculatedSubtotal])
+  // Shared with the reports so the list, the reports and this total are the
+  // same arithmetic; parking is left out of it, tax already included.
+  const calculatedHST = useMemo(() => (calculatedSubtotal + labourFee) * HST_RATE, [calculatedSubtotal, labourFee]);
+
+  const calculatedTotal = useMemo(() => calculatedSubtotal + labourFee + parkingCost + calculatedHST, [labourFee, parkingCost, calculatedHST, calculatedSubtotal])
 
   const handleAddItem = () => {
     const currentList = getValues('items') || [];
@@ -393,36 +397,19 @@ function InvoiceEditor() {
                           />
                         </div>
                       </div>
-                      <div className="flex justify-end">
-                        <input 
-                          type="text"
-                          className={`text-right h-[30px] text-slate-800 text-sm outline-none py-1 pr-2 rounded-md hover:bg-slate-100 hover:pl-2 hover:py-2 placeholder:italic placeholder:text-gray-500 autofill:bg-white`}
-                          placeholder=""
-                          {...register("other1")}
-                        />
-                        <input 
-                          {...register(`other1Fee`, {valueAsNumber: true })}
-                          type="number"
-                          min="0"
-                          step="any"
-                          className="w-[60px] h-[30px] text-right text-slate-800 text-sm outline-none py-1 hover:bg-slate-100  placeholder:italic placeholder:text-gray-500 autofill:bg-white"
-                        />
+                      <div className="flex flex-row justify-end align-center">
+                        <div className="pt-1 text-sm text-right">Parking Cost:</div>
+                        <div>
+                          <input 
+                            {...register(`parkingCost`, {valueAsNumber: true })}
+                            type="number"
+                            min="0"
+                            step="any"
+                            className="w-[60px] h-[30px] text-right text-slate-800 text-sm outline-none py-1 hover:bg-slate-100  placeholder:italic placeholder:text-gray-500 autofill:bg-white"
+                          />
+                        </div>
                       </div>
-                      <div className="flex justify-end">
-                        <input 
-                          type="text"
-                          className={`text-right h-[30px] text-slate-800 text-sm outline-none py-1 pr-2 rounded-md hover:bg-slate-100 placeholder:italic placeholder:text-gray-500 autofill:bg-white`}
-                          placeholder=""
-                          {...register("other2")}
-                        />
-                        <input 
-                          {...register(`other2Fee`, {valueAsNumber: true })}
-                          type="number"
-                          min="0"
-                          step="any"
-                          className="w-[60px] h-[30px] text-right text-slate-800 text-sm outline-none py-1 hover:bg-slate-100  placeholder:italic placeholder:text-gray-500 autofill:bg-white"
-                        />
-                      </div>
+                      <div className="text-sm text-right pb-1 label-padded">HST: &nbsp;&nbsp; {currencyFormatter.format(calculatedHST).slice(1)}</div>
                       <div className="text-sm font-bold text-right pt-1 label-padded">Total: {currencyFormatter.format(calculatedTotal)}</div>
                     </div>
                 </div>

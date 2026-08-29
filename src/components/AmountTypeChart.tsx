@@ -62,6 +62,14 @@ const cappedBar = (x: number, y: number, width: number, height: number) => {
   ].join(' ')
 }
 
+/** "parts, labour, parking and HST" -- the series, named for the description. */
+const SERIES_PHRASE = AMOUNT_TYPES
+  .map(type => amountTypeStyles[type].label)
+  .reduce((phrase, label, index) =>
+    index === 0 ? label
+      : index === AMOUNT_TYPES.length - 1 ? `${phrase} and ${label}`
+        : `${phrase}, ${label}`, '')
+
 interface Segment {
   type: AmountType
   y: number
@@ -121,7 +129,7 @@ function AmountTypeChart({ buckets, scopeLabel }: AmountTypeChartProps) {
   return (
     <figure className="m-0">
       {/* The legend carries each series' total, so every colour is readable as
-          a number too -- the aqua slot sits under 3:1 on white. */}
+          a number too -- the aqua and yellow slots sit under 3:1 on white. */}
       <figcaption className="flex flex-row flex-wrap gap-x-5 gap-y-2 pb-3">
         {seriesTotals.map(({ type, total }) => (
           <span key={type} className="flex flex-row items-center gap-2 text-sm">
@@ -143,7 +151,7 @@ function AmountTypeChart({ buckets, scopeLabel }: AmountTypeChartProps) {
           viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
           className="w-full h-auto block"
           role="img"
-          aria-label={`Amount billed per period for ${scopeLabel}, split into parts, labour and other charges. The same figures are in the table below.`}
+          aria-label={`Amount billed per period for ${scopeLabel}, split into ${SERIES_PHRASE}. The same figures are in the table below.`}
         >
           {ticks.map(tick => {
             const y = BASELINE - tick * scale

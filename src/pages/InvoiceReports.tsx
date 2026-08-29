@@ -191,8 +191,8 @@ function InvoiceReports() {
                     <h2 className="font-bold text-lg mb-1">What was billed for</h2>
                     <p className="text-sm text-slate-500 mb-4">
                       Each column is one {unitNouns[report.unit]}, split by the kind of charge.
-                      These are amounts billed to customers -- nothing here records what
-                      the parts cost, so this is revenue rather than margin.
+                      Totals are what the customer was billed, HST included -- nothing here
+                      records what the parts cost, so this is revenue rather than margin.
                     </p>
                     <AmountTypeChart
                       buckets={report.buckets}
@@ -258,10 +258,12 @@ function InvoiceReports() {
                       </caption>
                       <thead>
                         <tr className="bg-gray-100">
-                          <th className="border p-2 text-left w-[26%]">Period</th>
-                          <th className="border p-2 text-right">Parts</th>
-                          <th className="border p-2 text-right">Labour</th>
-                          <th className="border p-2 text-right">Other</th>
+                          <th className="border p-2 text-left w-[22%]">Period</th>
+                          {AMOUNT_TYPES.map((type: AmountType) => (
+                            <th key={type} className="border p-2 text-right">
+                              {amountTypeStyles[type].label}
+                            </th>
+                          ))}
                           <th className="border p-2 text-right">Total</th>
                         </tr>
                       </thead>
@@ -269,15 +271,11 @@ function InvoiceReports() {
                         {report.buckets.map(bucket => (
                           <tr key={bucket.start}>
                             <td className="border p-2">{bucket.title}</td>
-                            <td className="border p-2 text-right tabular-nums">
-                              {currencyFormatter.format(bucket.amounts.parts)}
-                            </td>
-                            <td className="border p-2 text-right tabular-nums">
-                              {currencyFormatter.format(bucket.amounts.labour)}
-                            </td>
-                            <td className="border p-2 text-right tabular-nums">
-                              {currencyFormatter.format(bucket.amounts.other)}
-                            </td>
+                            {AMOUNT_TYPES.map((type: AmountType) => (
+                              <td key={type} className="border p-2 text-right tabular-nums">
+                                {currencyFormatter.format(bucket.amounts[type])}
+                              </td>
+                            ))}
                             <td className="border p-2 text-right tabular-nums font-semibold">
                               {currencyFormatter.format(bucket.total)}
                             </td>

@@ -31,3 +31,14 @@ export const invoiceStatusStyles: Record<InvoiceStatus, InvoiceStatusStyle> = {
     ring: 'ring-red-600',
   },
 }
+
+/**
+ * Where each status sits when the list is sorted by it: what still needs
+ * chasing first, settled invoices last. Deliberately not the order in
+ * `INVOICE_STATUSES`, which is the order the editor offers the buttons in.
+ */
+export const invoiceStatusSortOrder: Record<InvoiceStatus, number> = {
+  pending: 0,
+  unpaid: 1,
+  paid: 2,
+}

@@ -33,12 +33,21 @@ export interface InvoiceRecord {
   description: string;
   recommendation: string;
   labourFee: number;
-  other1: string;
-  other1Fee: number;
-  other2: string;
-  other2Fee: number;
+  /** What parking the job cost, HST already included in the figure. */
+  parkingCost: number;
   createdAt: number;
   updatedAt: number;
+}
+
+/**
+ * The two free-text "other" fees invoices carried before v4. Declared only so
+ * the upgrade below can read them off the rows it is rewriting.
+ */
+interface LegacyOtherFees {
+  other1?: string;
+  other1Fee?: number;
+  other2?: string;
+  other2Fee?: number;
 }
 
 /**
@@ -55,6 +64,9 @@ export interface ItemRecord {
   unitPrice?: number;
   amount: number;
 }
+
+const feeAmount = (value: number | undefined) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : 0;
 
 const db = new Dexie('InvoiceCreatorDB') as Dexie & {
   customers: EntityTable<CustomerRecord, 'id'>;
@@ -99,6 +111,21 @@ db.version(3).stores({
 }).upgrade(tx => tx.table<InvoiceRecord>('invoices').toCollection().modify(invoice => {
   if (!invoice.status)
     invoice.status = DEFAULT_INVOICE_STATUS;
+}));
+
+// v4 replaces the two "other" fees with a parking cost. Whatever was billed as
+// an other fee is folded into it rather than dropped, so an upgraded invoice
+// still totals what it did before -- HST aside, which every invoice now carries.
+db.version(4).stores({
+  customers: '++id, name, city, phone, email',
+  invoices: '++id, &uuid, status, invoiceNo, date, customerId, updatedAt',
+  items: '++id, invoiceId, name',
+}).upgrade(tx => tx.table<InvoiceRecord & LegacyOtherFees>('invoices').toCollection().modify(invoice => {
+  invoice.parkingCost = feeAmount(invoice.other1Fee) + feeAmount(invoice.other2Fee);
+  delete invoice.other1;
+  delete invoice.other1Fee;
+  delete invoice.other2;
+  delete invoice.other2Fee;
 }));
 
 export { db };

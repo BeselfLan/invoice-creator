@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { FilePlus2, Save, SaveAll, Trash2, Upload } from 'lucide-react'
+import { ChevronDown, ChevronUp, FilePlus2, Save, SaveAll, Trash2, Upload } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   deleteInvoice,
@@ -13,7 +13,8 @@ import {
 import { readJsonFile, saveJson, toJson } from '../utils/jsonConverter'
 import { formatDateAsYYYYMMDD } from '../utils/formatDate'
 import { currencyFormatter } from '../utils/currency'
-import { invoiceStatusStyles } from '../constants/invoiceStatus'
+import { invoiceStatusSortOrder, invoiceStatusStyles } from '../constants/invoiceStatus'
+import { parseInvoiceDate } from '../utils/invoiceDate'
 
 const describeCount = (count: number) => `${count} invoice${count === 1 ? '' : 's'}`
 
@@ -22,12 +23,117 @@ const savedAtFormatter = new Intl.DateTimeFormat('en-CA', {
   timeStyle: 'short',
 })
 
+/** The columns the list can be reordered by. */
+type SortKey = 'date' | 'status' | 'customer'
+
+type SortDirection = 'asc' | 'desc'
+
+interface Sort {
+  key: SortKey
+  direction: SortDirection
+}
+
+/** The first click on a column sorts it the way that column is most useful. */
+const defaultDirection: Record<SortKey, SortDirection> = {
+  date: 'desc',
+  status: 'asc',
+  customer: 'asc',
+}
+
+/** Spelled out on the header button, since an arrow alone is ambiguous here. */
+const sortLabels: Record<SortKey, Record<SortDirection, string>> = {
+  date: { desc: 'most recent first', asc: 'oldest first' },
+  status: { asc: 'pending, unpaid, then paid', desc: 'paid, unpaid, then pending' },
+  customer: { asc: 'customer A to Z', desc: 'customer Z to A' },
+}
+
+/** Ascending comparators; a descending sort negates the result. */
+const comparators: Record<SortKey, (a: InvoiceSummary, b: InvoiceSummary) => number> = {
+  // Blank dates are filtered out below, so the fallback here never decides an order.
+  date: (a, b) => (parseInvoiceDate(a.date) ?? 0) - (parseInvoiceDate(b.date) ?? 0),
+  status: (a, b) => invoiceStatusSortOrder[a.status] - invoiceStatusSortOrder[b.status],
+  customer: (a, b) => a.customerName.localeCompare(b.customerName, 'en-CA', { sensitivity: 'base' }),
+}
+
+/**
+ * Rows the sorted column cannot speak for -- no readable date, no customer
+ * name. They sit at the bottom whichever way the column points, rather than
+ * flipping up to the top and burying the rows that were actually asked for.
+ */
+const isBlank: Record<SortKey, (invoice: InvoiceSummary) => boolean> = {
+  date: invoice => parseInvoiceDate(invoice.date) === undefined,
+  status: () => false,
+  customer: invoice => invoice.customerName.trim() === '',
+}
+
+interface SortableHeaderProps {
+  label: string
+  sortKey: SortKey
+  sort: Sort | null
+  onSort: (key: SortKey) => void
+  /** The column width, which lives on the `th` for `table-fixed` to read. */
+  className?: string
+}
+
+/** A column heading that reorders the list when clicked. */
+function SortableHeader({ label, sortKey, sort, onSort, className }: SortableHeaderProps) {
+  const active = sort?.key === sortKey
+  const direction = active ? sort.direction : defaultDirection[sortKey]
+  const nextDirection: SortDirection = active
+    ? (direction === 'asc' ? 'desc' : 'asc')
+    : defaultDirection[sortKey]
+  const Arrow = direction === 'desc' ? ChevronDown : ChevronUp
+
+  return (
+    <th className={`border p-0 text-left ${className ?? ''}`}>
+      <button
+        type="button"
+        className="w-full flex items-center gap-1 px-2 py-2 font-bold text-left hover:bg-gray-200"
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${sortLabels[sortKey][nextDirection]}`}
+      >
+        <span>{label}</span>
+        <Arrow size={14} className={active ? 'text-blue-600' : 'text-slate-400'} />
+      </button>
+    </th>
+  )
+}
+
 function InvoicesList() {
   const navigate = useNavigate()
   // useLiveQuery re-runs whenever any of the three tables change.
   const invoices = useLiveQuery(() => listInvoices())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<string | null>(null)
+  // Null until a column is clicked, which leaves the list in the order the
+  // database hands it back: whatever was saved most recently, first.
+  const [sort, setSort] = useState<Sort | null>(null)
+
+  const handleSort = (key: SortKey) =>
+    setSort(current => current?.key === key
+      ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+      : { key, direction: defaultDirection[key] })
+
+  const sortedInvoices = useMemo(() => {
+    if (!invoices || !sort)
+      return invoices
+
+    const sign = sort.direction === 'asc' ? 1 : -1
+    const blank = isBlank[sort.key]
+    const compare = comparators[sort.key]
+
+    return invoices.slice().sort((a, b) => {
+      const aBlank = blank(a)
+      const bBlank = blank(b)
+      if (aBlank !== bBlank)
+        return aBlank ? 1 : -1
+
+      const result = sign * compare(a, b)
+      // Same date, status or customer: fall back to the default ordering so
+      // rows never shuffle between renders.
+      return result !== 0 ? result : b.updatedAt - a.updatedAt
+    })
+  }, [invoices, sort])
 
   useEffect(() => {
     if (status === null)
@@ -182,15 +288,15 @@ function InvoicesList() {
               <thead>
                 <tr className="bg-gray-100">
                   <th className="border p-2 text-left w-[17%]">Invoice #</th>
-                  <th className="border p-2 text-left w-[16%]">Date</th>
-                  <th className="border p-2 text-left w-[27%]">Customer</th>
-                  <th className="border p-2 text-left w-[14%]">Status</th>
-                  <th className="border p-2 text-right w-[16%]">Total</th>
+                  <SortableHeader label="Date" sortKey="date" sort={sort} onSort={handleSort} className="w-[16%]" />
+                  <SortableHeader label="Customer" sortKey="customer" sort={sort} onSort={handleSort} className="w-[27%]" />
+                  <SortableHeader label="Status" sortKey="status" sort={sort} onSort={handleSort} className="w-[14%]" />
+                  <th className="border p-2 text-right w-[16%]" title="Total billed, HST included">Total</th>
                   <th className="border p-2 w-[70px]"></th>
                 </tr>
               </thead>
               <tbody>
-                {invoices.map(invoice => (
+                {sortedInvoices?.map(invoice => (
                   <tr
                     key={invoice.id}
                     className="cursor-pointer hover:bg-slate-100"
