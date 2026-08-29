@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import '../App.css'
 import {
   DEFAULT_INVOICE_STATUS,
@@ -7,7 +7,8 @@ import {
   baseInvoice,
   getCurrentDate,
 } from '../models/Invoice'
-import { HST_RATE } from '../models/AmountType'
+import { breakdownOf, breakdownTotal } from '../models/AmountType'
+import { CHARGES, chargeAmounts } from '../models/charges'
 import { invoiceStatusStyles } from '../constants/invoiceStatus'
 import { contactInfo } from '../constants/contactInfo'
 import { useForm } from 'react-hook-form'
@@ -90,9 +91,8 @@ function InvoiceEditor() {
     }
   }
 
-  const amounts = watch("items")?.map(item => item.amount) ?? [];
-  const labourFee = watch("labourFee") || 0
-  const parkingCost = watch("parkingCost") || 0;
+  const watchedItems = watch("items") ?? [];
+  const charges = chargeAmounts(watch());
   const date = watch("date") || new Date();
   const invoiceNo = watch("invoiceNo") || "";
   const status = watch("status") ?? DEFAULT_INVOICE_STATUS;
@@ -166,15 +166,19 @@ function InvoiceEditor() {
     return quantity * unitPrice;
   };
 
-  const calculatedSubtotal = useMemo(() => {
-    return amounts?.reduce((sum, amount) => sum + amount, 0) || 0
-  }, [amounts])
+  // Every figure in the totals block comes out of the same breakdown the list
+  // and the reports read, so the editor cannot drift away from them -- which
+  // fee is taxed and which is not is settled once, in the charge registry.
+  // It is a handful of additions over items already in memory, so it costs
+  // less than the dependency list memoising it would need.
+  const breakdown = breakdownOf({ items: watchedItems, ...charges })
+  const calculatedHST = breakdown.tax
+  const calculatedTotal = breakdownTotal(breakdown)
 
-  // Shared with the reports so the list, the reports and this total are the
-  // same arithmetic; parking is left out of it, tax already included.
-  const calculatedHST = useMemo(() => (calculatedSubtotal + labourFee) * HST_RATE, [calculatedSubtotal, labourFee]);
-
-  const calculatedTotal = useMemo(() => calculatedSubtotal + labourFee + parkingCost + calculatedHST, [labourFee, parkingCost, calculatedHST, calculatedSubtotal])
+  // The parts and the labour typed into the table, before any of the fees --
+  // which is a different figure from the breakdown's parts, since a line item
+  // named like labour is counted as labour there.
+  const calculatedSubtotal = watchedItems.reduce((sum, item) => sum + (item.amount || 0), 0)
 
   const handleAddItem = () => {
     const currentList = getValues('items') || [];
@@ -385,30 +389,20 @@ function InvoiceEditor() {
                   </table>
                     <div className="w-full flex flex-col align-right">
                       <div className="text-sm text-right pb-1 label-padded">Subtotal: &nbsp;&nbsp; {currencyFormatter.format(calculatedSubtotal).slice(1)}</div>
-                      <div className="flex flex-row justify-end align-center">
-                        <div className="pt-1 text-sm text-right">Labour and Diagnosis Fee:</div>
-                        <div>
-                          <input 
-                            {...register(`labourFee`, {valueAsNumber: true })}
-                            type="number"
-                            min="0"
-                            step="any"
-                            className="w-[60px] h-[30px] text-right text-slate-800 text-sm outline-none py-1 hover:bg-slate-100  placeholder:italic placeholder:text-gray-500 autofill:bg-white"
-                          />
+                      {CHARGES.map(charge => (
+                        <div key={charge.key} className="flex flex-row justify-end align-center">
+                          <div className="pt-1 text-sm text-right">{charge.label}:</div>
+                          <div>
+                            <input 
+                              {...register(charge.key, {valueAsNumber: true })}
+                              type="number"
+                              min="0"
+                              step="any"
+                              className="w-[60px] h-[30px] text-right text-slate-800 text-sm outline-none py-1 hover:bg-slate-100  placeholder:italic placeholder:text-gray-500 autofill:bg-white"
+                            />
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex flex-row justify-end align-center">
-                        <div className="pt-1 text-sm text-right">Parking Cost:</div>
-                        <div>
-                          <input 
-                            {...register(`parkingCost`, {valueAsNumber: true })}
-                            type="number"
-                            min="0"
-                            step="any"
-                            className="w-[60px] h-[30px] text-right text-slate-800 text-sm outline-none py-1 hover:bg-slate-100  placeholder:italic placeholder:text-gray-500 autofill:bg-white"
-                          />
-                        </div>
-                      </div>
+                      ))}
                       <div className="text-sm text-right pb-1 label-padded">HST: &nbsp;&nbsp; {currencyFormatter.format(calculatedHST).slice(1)}</div>
                       <div className="text-sm font-bold text-right pt-1 label-padded">Total: {currencyFormatter.format(calculatedTotal)}</div>
                     </div>

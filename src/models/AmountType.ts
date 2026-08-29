@@ -1,20 +1,43 @@
 import type { Invoice } from './Invoice'
+import {
+  CHARGES,
+  CHARGE_CATEGORIES,
+  chargeAmounts,
+  type ChargeAmounts,
+  type ChargeCategory,
+} from './charges'
 
 /**
- * The kinds of money an invoice bills for. Reports split totals along these
- * four, so they have to cover every field that contributes to a total.
+ * The kinds of money an invoice bills for: its line items, one slot per fee in
+ * the charge registry, and the tax on top. Reports split totals along these, so
+ * they have to cover every field that contributes to a total -- taking the
+ * middle of the list from `CHARGE_CATEGORIES` is what keeps that true when a
+ * fee is added. The order is the order the chart stacks them in.
  */
-export const AMOUNT_TYPES = ['parts', 'labour', 'parking', 'tax'] as const
+export const AMOUNT_TYPES = ['parts', ...CHARGE_CATEGORIES, 'tax'] as const
 
 export type AmountType = typeof AMOUNT_TYPES[number]
 
 export type AmountBreakdown = Record<AmountType, number>
 
-/** The rate the editor charges on everything except the parking cost. */
+/** The rate charged on the parts and on every fee the registry marks taxable. */
 export const HST_RATE = 0.13
 
+/** The slices HST is charged on: the parts, plus the taxable fees. */
+const TAXED: ReadonlySet<AmountType> = new Set<AmountType>([
+  'parts',
+  ...CHARGES.filter(charge => charge.taxable).map(charge => charge.category),
+])
+
+/**
+ * Where a line item named like labour is counted. Spelled out rather than
+ * assumed, so dropping the labour fee from the registry is a compile error
+ * here rather than items quietly piling up in a category that no longer exists.
+ */
+const LABOUR_CATEGORY: ChargeCategory = 'labour'
+
 export const emptyBreakdown = (): AmountBreakdown =>
-  ({ parts: 0, labour: 0, parking: 0, tax: 0 })
+  Object.fromEntries(AMOUNT_TYPES.map(type => [type, 0])) as AmountBreakdown
 
 export const breakdownTotal = (breakdown: AmountBreakdown) =>
   AMOUNT_TYPES.reduce((sum, type) => sum + breakdown[type], 0)
@@ -41,30 +64,32 @@ const num = (value: number | undefined) =>
   typeof value === 'number' && Number.isFinite(value) ? value : 0
 
 /**
- * The parts / labour / parking / tax split of everything one invoice bills for,
- * matching the totals the editor shows: HST on the parts and the labour, and
- * the parking cost passed through as billed.
+ * How one invoice's money splits across the amount types. This is the only
+ * place the arithmetic lives: the editor's totals block, the invoice list and
+ * the reports all read their figures out of it, so none of the three can drift
+ * away from the other two.
  */
-export function breakdownOf(invoice: {
-  items?: Pick<Invoice['items'][number], 'name' | 'amount'>[]
-  labourFee?: number
-  parkingCost?: number
-}): AmountBreakdown {
+export function breakdownOf(
+  invoice: {
+    items?: Pick<Invoice['items'][number], 'name' | 'amount'>[]
+  } & Partial<ChargeAmounts>,
+): AmountBreakdown {
   const breakdown = emptyBreakdown()
 
   for (const item of invoice.items ?? []) {
     if (isLabourItem(item.name))
-      breakdown.labour += num(item.amount)
+      breakdown[LABOUR_CATEGORY] += num(item.amount)
     else
       breakdown.parts += num(item.amount)
   }
 
-  breakdown.labour += num(invoice.labourFee)
-  // Parking is billed at what it cost with its tax already inside it, so it is
-  // the one charge HST is not added on top of. That tax cannot be separated
-  // back out either, which is why it stays counted as parking rather than tax.
-  breakdown.parking += num(invoice.parkingCost)
-  breakdown.tax = (breakdown.parts + breakdown.labour) * HST_RATE
+  const charges = chargeAmounts(invoice)
+  for (const charge of CHARGES)
+    breakdown[charge.category] += charges[charge.key]
+
+  breakdown.tax = AMOUNT_TYPES
+    .filter(type => TAXED.has(type))
+    .reduce((sum, type) => sum + breakdown[type], 0) * HST_RATE
 
   return breakdown
 }

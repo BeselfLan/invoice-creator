@@ -1,3 +1,5 @@
+import { emptyCharges, type ChargeAmounts } from './charges'
+
 export const getCurrentDate = () => {
   const date = new Date();
   const year = date.getFullYear();
@@ -44,9 +46,7 @@ export type Invoice = {
     unitPrice?: number,
     amount: number,
   }[],
-  labourFee: number,
-  parkingCost: number, // This cost already includes hst
-}
+} & ChargeAmounts
 
 export const baseInvoice: Invoice = {
   status: DEFAULT_INVOICE_STATUS,
@@ -89,6 +89,5 @@ export const baseInvoice: Invoice = {
       amount: 200.00,
     }
   ],
-  labourFee: 0,
-  parkingCost: 0,
+  ...emptyCharges(),
 }

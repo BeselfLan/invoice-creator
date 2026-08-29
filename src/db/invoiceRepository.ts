@@ -6,6 +6,7 @@ import {
   type InvoiceStatus,
 } from '../models/Invoice';
 import { breakdownOf, breakdownTotal } from '../models/AmountType';
+import { chargeAmounts, type ChargeAmounts } from '../models/charges';
 import { parseInvoiceDate } from '../utils/invoiceDate';
 import type { InvoiceStat } from '../utils/invoiceStats';
 
@@ -35,20 +36,16 @@ const optionalNum = (value: number | undefined) =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
 /** What one stored invoice bills, split the way the reports read it. */
-const breakdownFor = (
-  invoice: Pick<InvoiceRecord, 'labourFee' | 'parkingCost'>,
-  items: ItemRecord[],
-) => breakdownOf({ items, labourFee: invoice.labourFee, parkingCost: invoice.parkingCost });
+const breakdownFor = (invoice: ChargeAmounts, items: ItemRecord[]) =>
+  breakdownOf({ items, ...chargeAmounts(invoice) });
 
 /**
  * The invoice total, HST included -- the same figure the editor shows. Taken
- * off the report breakdown rather than summed separately, so the list and the
- * reports can never disagree about what an invoice came to.
+ * off the report breakdown rather than summed separately, so the list, the
+ * reports and the editor can never disagree about what an invoice came to.
  */
-const invoiceTotal = (
-  invoice: Pick<InvoiceRecord, 'labourFee' | 'parkingCost'>,
-  items: ItemRecord[],
-) => breakdownTotal(breakdownFor(invoice, items));
+const invoiceTotal = (invoice: ChargeAmounts, items: ItemRecord[]) =>
+  breakdownTotal(breakdownFor(invoice, items));
 
 /** Joins the three tables back into the shape the invoice form works with. */
 const toInvoice = (
@@ -81,8 +78,7 @@ const toInvoice = (
       unitPrice: item.unitPrice,
       amount: num(item.amount),
     })),
-  labourFee: num(invoice.labourFee),
-  parkingCost: num(invoice.parkingCost),
+  ...chargeAmounts(invoice),
 });
 
 /**
@@ -124,8 +120,7 @@ export async function saveInvoice(invoice: Invoice, id?: number): Promise<number
       customerId,
       description: invoice.description ?? '',
       recommendation: invoice.recommendation ?? '',
-      labourFee: num(invoice.labourFee),
-      parkingCost: num(invoice.parkingCost),
+      ...chargeAmounts(invoice),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -305,12 +300,13 @@ export function normalizeImportedInvoice(parsed: unknown): Invoice | null {
         amount: num(item.amount as number | undefined),
       }
     }),
-    labourFee: num(raw.labourFee as number | undefined),
+    ...chargeAmounts(raw),
     // Files exported before parking replaced the two "other" fees carry those
     // instead; their money is folded in rather than dropped on the way back.
-    parkingCost: raw.parkingCost === undefined
-      ? num(raw.other1Fee as number | undefined) + num(raw.other2Fee as number | undefined)
-      : num(raw.parkingCost as number | undefined),
+    ...(raw.parkingCost === undefined && {
+      parkingCost: num(raw.other1Fee as number | undefined) +
+        num(raw.other2Fee as number | undefined),
+    }),
   }
 }
 

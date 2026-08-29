@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import { DEFAULT_INVOICE_STATUS, type InvoiceStatus } from '../models/Invoice';
+import type { ChargeAmounts } from '../models/charges';
 
 /**
  * Customer info, stored once per customer and referenced by invoices.
@@ -15,9 +16,10 @@ export interface CustomerRecord {
 
 /**
  * The invoice header. Line items live in the `items` table and the billing
- * details live in `customers`, both linked back by foreign key.
+ * details live in `customers`, both linked back by foreign key; the fee columns
+ * come from the charge registry, so a fee added there is a column here too.
  */
-export interface InvoiceRecord {
+export type InvoiceRecord = {
   id: number;
   /**
    * The invoice's identity outside this browser. `id` is only unique within
@@ -32,12 +34,9 @@ export interface InvoiceRecord {
   customerId: number;
   description: string;
   recommendation: string;
-  labourFee: number;
-  /** What parking the job cost, HST already included in the figure. */
-  parkingCost: number;
   createdAt: number;
   updatedAt: number;
-}
+} & ChargeAmounts;
 
 /**
  * The two free-text "other" fees invoices carried before v4. Declared only so
