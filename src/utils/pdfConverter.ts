@@ -79,6 +79,7 @@ export const toPdf = async (element: HTMLElement, fileName: string) => {
         page++;
       }
     
-      pdf.save(fileName);
+      // jsPDF writes the name through as given, so the extension is ours to add.
+      pdf.save(fileName.endsWith(".pdf") ? fileName : `${fileName}.pdf`);
       console.log("Finished generating pdf");
 }

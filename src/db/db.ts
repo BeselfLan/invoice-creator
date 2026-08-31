@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import { DEFAULT_INVOICE_STATUS, type InvoiceStatus } from '../models/Invoice';
+import { DEFAULT_INVOICE_STATUS, isInvoiceStatus, type InvoiceStatus } from '../models/Invoice';
 import type { ChargeAmounts } from '../models/charges';
 
 /**
@@ -26,7 +26,7 @@ export type InvoiceRecord = {
    * one device's database, so exports and imports are matched on this instead.
    */
   uuid: string;
-  /** Payment status: paid, pending or unpaid. */
+  /** Payment status: paid or unpaid. */
   status: InvoiceStatus;
   invoiceNo: string;
   date: string;
@@ -125,6 +125,18 @@ db.version(4).stores({
   delete invoice.other1Fee;
   delete invoice.other2;
   delete invoice.other2Fee;
+}));
+
+// v5 drops the pending status. An invoice that was left pending is money still
+// owed, so it becomes unpaid rather than paid -- the same reading v3 gave the
+// invoices that predated statuses entirely.
+db.version(5).stores({
+  customers: '++id, name, city, phone, email',
+  invoices: '++id, &uuid, status, invoiceNo, date, customerId, updatedAt',
+  items: '++id, invoiceId, name',
+}).upgrade(tx => tx.table<InvoiceRecord>('invoices').toCollection().modify(invoice => {
+  if (!isInvoiceStatus(invoice.status))
+    invoice.status = DEFAULT_INVOICE_STATUS;
 }));
 
 export { db };

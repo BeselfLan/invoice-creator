@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { ChevronDown, ChevronUp, FilePlus2, Save, SaveAll, Trash2, Upload } from 'lucide-react'
+import { ChevronDown, ChevronUp, FilePlus2, SaveAll, Trash2, Upload } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   deleteInvoice,
   exportAllInvoices,
-  getInvoiceForExport,
   importInvoiceFile,
   listInvoices,
   type InvoiceSummary,
 } from '../db/invoiceRepository'
-import { readJsonFile, saveJson, toJson } from '../utils/jsonConverter'
+import { readJsonFile, saveJson } from '../utils/jsonConverter'
 import { formatDateAsYYYYMMDD } from '../utils/formatDate'
 import { currencyFormatter } from '../utils/currency'
 import { invoiceStatusSortOrder, invoiceStatusStyles } from '../constants/invoiceStatus'
@@ -43,7 +42,7 @@ const defaultDirection: Record<SortKey, SortDirection> = {
 /** Spelled out on the header button, since an arrow alone is ambiguous here. */
 const sortLabels: Record<SortKey, Record<SortDirection, string>> = {
   date: { desc: 'most recent first', asc: 'oldest first' },
-  status: { asc: 'pending, unpaid, then paid', desc: 'paid, unpaid, then pending' },
+  status: { asc: 'unpaid first', desc: 'paid first' },
   address: { asc: 'address A to Z', desc: 'address Z to A' },
 }
 
@@ -140,21 +139,6 @@ function InvoicesList() {
     const timeout = setTimeout(() => setStatus(null), 4000)
     return () => clearTimeout(timeout)
   }, [status])
-
-  /** Downloads one invoice in the same JSON format the editor saves. */
-  const handleDownload = async (event: React.MouseEvent, summary: InvoiceSummary) => {
-    event.stopPropagation()
-    try {
-      const invoice = await getInvoiceForExport(summary.id)
-      if (!invoice)
-        return
-      const label = invoice.customerInfo?.address?.trim() || invoice.invoiceNo
-      toJson(invoice, ['invoice', label, invoice.date?.replace(/\s/g, '-')].filter(Boolean).join('-'))
-    } catch (error) {
-      console.error('Failed to export invoice', error)
-      setStatus('Could not export that invoice.')
-    }
-  }
 
   /** Writes every saved invoice into a single backup file. */
   const handleSaveAll = async () => {
@@ -289,7 +273,7 @@ function InvoicesList() {
                 <SortableHeader label="Address" sortKey="address" sort={sort} onSort={handleSort} className="w-[27%]" />
                 <SortableHeader label="Status" sortKey="status" sort={sort} onSort={handleSort} className="w-[14%]" />
                 <th className="border p-2 text-right w-[16%]" title="Total billed, HST included">Total</th>
-                <th className="border p-2 w-[70px]"></th>
+                <th className="border p-2 w-[46px]"></th>
               </tr>
             </thead>
             <tbody>
@@ -318,15 +302,7 @@ function InvoicesList() {
                     </div>
                   </td>
                   <td className="border p-2">
-                    <div className="flex flex-row gap-2 justify-center items-center">
-                      <button
-                        type="button"
-                        title="Save invoice as JSON"
-                        className="text-gray-500 hover:text-blue-600"
-                        onClick={event => handleDownload(event, invoice)}
-                      >
-                        <Save size={16} />
-                      </button>
+                    <div className="flex flex-row justify-center items-center">
                       <button
                         type="button"
                         title="Delete invoice"

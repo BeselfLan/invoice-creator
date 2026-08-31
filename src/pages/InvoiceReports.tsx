@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock, Table2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Table2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import AmountTypeChart from '../components/AmountTypeChart'
 import { amountTypeStyles } from '../constants/amountType'
@@ -21,9 +21,8 @@ import {
   type ReportSelection,
 } from '../utils/invoiceStats'
 
-const statusIcons: Record<InvoiceStatus, typeof Clock> = {
+const statusIcons: Record<InvoiceStatus, typeof CheckCircle2> = {
   paid: CheckCircle2,
-  pending: Clock,
   unpaid: AlertCircle,
 }
 
@@ -163,7 +162,7 @@ function InvoiceReports() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3 pb-6" role="group" aria-label="Payment status">
+            <div className="grid grid-cols-2 gap-3 pb-6" role="group" aria-label="Payment status">
               {INVOICE_STATUSES.map(status => {
                 const Icon = statusIcons[status]
                 const { total, count } = report.byStatus[status]

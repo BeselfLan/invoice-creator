@@ -32,6 +32,14 @@ export interface InvoiceSummary {
 /** Named rather than inlined below, so the query cannot drift from the type. */
 const UNPAID_STATUS: InvoiceStatus = 'unpaid';
 
+/**
+ * A stored status as the rest of the app is allowed to see it: missing on rows
+ * saved before statuses existed, and no longer offered on rows the pending
+ * migration has not reached yet, both read as the default.
+ */
+const storedStatus = (status: InvoiceStatus | undefined): InvoiceStatus =>
+  isInvoiceStatus(status) ? status : DEFAULT_INVOICE_STATUS;
+
 /** The billing details that decide whether two invoices are for one customer. */
 export type CustomerIdentity = Pick<Invoice['customerInfo'], 'name'> &
   Partial<Pick<Invoice['customerInfo'], 'address' | 'city'>>;
@@ -84,7 +92,7 @@ const toInvoice = (
   items: ItemRecord[],
 ): Invoice => ({
   uuid: invoice.uuid,
-  status: invoice.status ?? DEFAULT_INVOICE_STATUS,
+  status: storedStatus(invoice.status),
   invoiceNo: invoice.invoiceNo,
   date: invoice.date,
   customerInfo: {
@@ -144,7 +152,7 @@ export async function saveInvoice(invoice: Invoice, id?: number): Promise<number
       // The form always sends a status; fall back for older saved data.
       status: isInvoiceStatus(invoice.status)
         ? invoice.status
-        : existing?.status ?? DEFAULT_INVOICE_STATUS,
+        : storedStatus(existing?.status),
       invoiceNo: invoice.invoiceNo ?? '',
       date: invoice.date ?? '',
       customerId,
@@ -245,7 +253,7 @@ export async function listInvoices(): Promise<InvoiceSummary[]> {
   return joined.map(({ record, customer, items }) => ({
     id: record.id,
     uuid: record.uuid,
-    status: record.status ?? DEFAULT_INVOICE_STATUS,
+    status: storedStatus(record.status),
     invoiceNo: record.invoiceNo,
     date: record.date,
     customerName: customer?.name ?? '',
@@ -315,7 +323,7 @@ export async function listInvoiceStats(): Promise<InvoiceStat[]> {
     const amounts = breakdownFor(record, items);
     return {
       id: record.id,
-      status: record.status ?? DEFAULT_INVOICE_STATUS,
+      status: storedStatus(record.status),
       invoiceNo: record.invoiceNo,
       customerName: customer?.name ?? '',
       dateMs: parseInvoiceDate(record.date) ?? record.createdAt,
@@ -323,15 +331,6 @@ export async function listInvoiceStats(): Promise<InvoiceStat[]> {
       total: breakdownTotal(amounts),
     };
   });
-}
-
-/**
- * Reads a stored invoice back in the plain JSON shape the editor exports, so
- * downloaded files are interchangeable with the ones saved from the editor.
- */
-export async function getInvoiceForExport(id: number): Promise<Invoice | undefined> {
-  // Deliberately without the database id, which means nothing outside this browser.
-  return readInvoice(id)
 }
 
 const str = (value: unknown, fallback = '') =>

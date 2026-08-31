@@ -20,7 +20,7 @@ import { fromJson, toJson } from '../utils/jsonConverter'
 import ResizeableTextArea from '../components/ResizeableTextArea'
 import UnpaidCustomerWarning from '../components/UnpaidCustomerWarning'
 import { COMPANY_NAME } from '../constants/constants'
-import { formatDateAsYYYYMMDD } from '../utils/formatDate'
+import { invoiceFileName } from '../utils/invoiceFileName'
 import { currencyFormatter } from '../utils/currency'
 
 function InvoiceEditor() {
@@ -141,7 +141,7 @@ function InvoiceEditor() {
   setDefaultsValues() 
 
   const handleExportJson = (invoice: Invoice) => {
-    toJson(invoice, `invoice-${invoice.customerInfo?.address}-${invoice?.date?.replace(/\s/g, '-')}`)
+    toJson(invoice, invoiceFileName(invoice))
   }
 
   const handleDownloadPdf = async (invoice: Invoice) => {
@@ -152,7 +152,7 @@ function InvoiceEditor() {
     // jspdf and html2canvas are ~600kB between them and nothing renders until
     // the entry chunk has parsed, so they are fetched at the click instead.
     const { toPdf } = await import('../utils/pdfConverter')
-    await toPdf(element, `invoice-${invoice.customerInfo?.address}-${invoice?.date?.replace(/\s/g, '-')}`)
+    await toPdf(element, invoiceFileName(invoice))
   }
 
   // Method 3: Use both success and error callbacks

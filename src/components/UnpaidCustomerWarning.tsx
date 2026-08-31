@@ -39,7 +39,7 @@ function UnpaidCustomerWarning({ invoices }: UnpaidCustomerWarningProps) {
         type="button"
         aria-expanded={open}
         title={`This customer has ${label} on file. Click to see ${invoices.length === 1 ? 'it' : 'them'}.`}
-        className="flex flex-row gap-1 items-center text-xs px-2 py-1 rounded-full border bg-red-100 text-red-800 border-red-300 hover:bg-red-200"
+        className="flex flex-row gap-1 items-center text-xs px-2 py-1 rounded-full border bg-yellow-100 text-yellow-800 border-yellow-400 hover:bg-yellow-200"
         onClick={() => setOpen(current => !current)}
       >
         <AlertTriangle size={14} />
@@ -48,7 +48,7 @@ function UnpaidCustomerWarning({ invoices }: UnpaidCustomerWarningProps) {
 
       {open && (
         <div
-          className="absolute z-10 top-full left-0 mt-1 w-72 bg-white border border-red-300 rounded-md shadow-lg p-2 flex flex-col gap-1"
+          className="absolute z-10 top-full left-0 mt-1 w-72 bg-white border border-yellow-400 rounded-md shadow-lg p-2 flex flex-col gap-1"
         >
           <div className="text-xs text-slate-600 px-1 pb-1">
             Already unpaid for this name, address and city:
