@@ -8,7 +8,7 @@ import {
   getCurrentDate,
 } from '../models/Invoice'
 import { breakdownOf, breakdownTotal } from '../models/AmountType'
-import { CHARGES, chargeAmounts } from '../models/charges'
+import { CHARGES, chargeAmounts, type ChargeKey } from '../models/charges'
 import { invoiceStatusStyles } from '../constants/invoiceStatus'
 import { contactInfo } from '../constants/contactInfo'
 import { useForm } from 'react-hook-form'
@@ -27,6 +27,13 @@ function InvoiceEditor() {
 
   const [invoice] = useState<Invoice>(baseInvoice)
   const [currentItemCount, setCurrentItemCount] = useState(0)
+
+  // Which fee is being typed into, and the text keyed into it. Only one input
+  // can hold the caret, so one slot covers them all. While a fee is being typed
+  // the box shows exactly what was keyed; every other time -- including the
+  // moment an invoice is loaded off the database or out of a file -- it shows
+  // the stored number at two decimal places.
+  const [typedCharge, setTypedCharge] = useState<{ key: ChargeKey, text: string } | null>(null)
   const {
     register, 
     handleSubmit, 
@@ -198,6 +205,19 @@ function InvoiceEditor() {
   // which is a different figure from the breakdown's parts, since a line item
   // named like labour is counted as labour there.
   const calculatedSubtotal = watchedItems.reduce((sum, item) => sum + (item.amount || 0), 0)
+
+  // One width for every fee's box, taken from the longest figure among them,
+  // rather than a fixed width: a four-figure charge is then neither clipped on
+  // screen nor cut off in the exported PDF. Sizing them together is what keeps
+  // the labels in a column -- widening one box alone would leave its label
+  // sitting out to the left of its neighbours. The rows are right-justified, so
+  // the width they gain falls to the left and the figures stay where they are.
+  // The added 14px is the box's own right padding, which holds its figure the
+  // same distance off the edge as the Subtotal, HST and Total lines.
+  const chargeWidth = `calc(${Math.max(
+    5,
+    ...CHARGES.map(charge => charges[charge.key].toFixed(2).length + 1),
+  )}ch + 14px)`
 
   const handleAddItem = () => {
     const currentList = getValues('items') || [];
@@ -400,20 +420,38 @@ function InvoiceEditor() {
                 </table>
                   <div className="w-full flex flex-col align-right">
                     <div className="text-sm text-right pb-1 label-padded">Subtotal: &nbsp;&nbsp; {currencyFormatter.format(calculatedSubtotal).slice(1)}</div>
-                    {CHARGES.map(charge => (
-                      <div key={charge.key} className="flex flex-row justify-end align-center">
-                        <div className="pt-1 text-sm text-right">{charge.label}:</div>
-                        <div>
-                          <input 
-                            {...register(charge.key, {valueAsNumber: true })}
-                            type="number"
-                            min="0"
-                            step="any"
-                            className="w-[60px] h-[30px] text-right text-slate-800 text-sm outline-none py-1 hover:bg-slate-100  placeholder:italic placeholder:text-gray-500 autofill:bg-white"
-                          />
+                {CHARGES.map(charge => {
+                      const field = register(charge.key, { valueAsNumber: true })
+                      return (
+                        <div key={charge.key} className="flex flex-row justify-end align-center">
+                          <div className="pt-1 text-sm text-right">{charge.label}:</div>
+                          <div>
+                            <input
+                              {...field}
+                              value={typedCharge?.key === charge.key
+                                ? typedCharge.text
+                                : charges[charge.key].toFixed(2)}
+                              onChange={event => {
+                                setTypedCharge({ key: charge.key, text: event.target.value })
+                                field.onChange(event)
+                              }}
+                              onBlur={event => {
+                                const typed = event.target.valueAsNumber
+                                const cents = Number.isFinite(typed) ? Math.round(typed * 100) / 100 : 0
+                                setTypedCharge(null)
+                                setValue(charge.key, cents, { shouldDirty: true })
+                                field.onBlur(event)
+                              }}
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              style={{ width: chargeWidth }}
+                              className="charge-input label-padded h-[30px] max-w-[180px] text-right text-slate-800 text-sm outline-none py-1 hover:bg-slate-100  placeholder:italic placeholder:text-gray-500 autofill:bg-white"
+                            />
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                     <div className="text-sm text-right pb-1 label-padded">HST: &nbsp;&nbsp; {currencyFormatter.format(calculatedHST).slice(1)}</div>
                     <div className="text-sm font-bold text-right pt-1 label-padded">Total: {currencyFormatter.format(calculatedTotal)}</div>
                   </div>
